@@ -86,6 +86,12 @@ else:
     T1_GATE_ENTER_LON = 29.2599517
     T1_GATE_EXIT_LAT = 40.8629223
     T1_GATE_EXIT_LON = 29.2599123
+    T1_GATE_MID_LAT = 40.8629862
+    T1_GATE_MID_LON = 29.2599320
+
+    # Task 1 Navigation Settings
+    SPOT_TURN_THRESHOLD = 40.0  # Degrees
+    SPOT_TURN_PWM = 200
 
     # TASK 2: Debris Clearance (Engel ve Işık Sahası)
     # T2 Başlangıcı (Referans)

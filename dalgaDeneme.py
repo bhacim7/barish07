@@ -1561,53 +1561,33 @@ def main():
                 target_lat = None
                 target_lon = None
 
-                # --- GÖREV 1: KANAL GEÇİŞİ ---
+                # --- GÖREV 1: KANAL GEÇİŞİ (STATE MACHINE) ---
                 if mevcut_gorev == "TASK1_APPROACH":
-                    target_lat = cfg.T1_GATE_ENTER_LAT
-                    target_lon = cfg.T1_GATE_ENTER_LON
+                    mevcut_gorev = "TASK1_STATE_ENTER"
 
-                    # Kapıya 5 metre kala Vision devralsın
-                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 5.0:
-                        print(f"{Fore.YELLOW}[GÖREV] Task 1 Kapısındayız -> İcra Modu{Style.RESET_ALL}")
+                if mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT"]:
+                    # 1. Hedef Belirleme
+                    if mevcut_gorev == "TASK1_STATE_ENTER":
+                        target_lat = cfg.T1_GATE_ENTER_LAT
+                        target_lon = cfg.T1_GATE_ENTER_LON
+                    elif mevcut_gorev == "TASK1_STATE_MID":
+                        target_lat = cfg.T1_GATE_MID_LAT
+                        target_lon = cfg.T1_GATE_MID_LON
+                    else:
+                        target_lat = cfg.T1_GATE_EXIT_LAT
+                        target_lon = cfg.T1_GATE_EXIT_LON
 
-                        # YENİ: Başlangıç konumunu hafızaya al (Böylece ne kadar yol gittiğimizi bileceğiz)
-                        task1_start_lat = ida_enlem
-                        task1_start_lon = ida_boylam
-
-                        mevcut_gorev = "TASK1_EXECUTE"
-
-                elif mevcut_gorev == "TASK1_EXECUTE":
-                    target_lat = cfg.T1_GATE_EXIT_LAT
-                    target_lon = cfg.T1_GATE_EXIT_LON
-
-                    # NOT: Bu modda robot, aşağıdaki 'select_mission_target' fonksiyonu sayesinde
-                    # sürekli kamera ile kapıları ortalayarak ilerler.
-
-                    # 1. Çıkış GPS noktasına kalan mesafe
-                    dist_to_exit = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
-
-                    # 2. Görev başından beri kat edilen toplam mesafe
-                    # (Eğer start değişkeni yoksa hatayı önlemek için şu anki konumu kullan)
-                    s_lat = task1_start_lat if 'task1_start_lat' in locals() else ida_enlem
-                    s_lon = task1_start_lon if 'task1_start_lon' in locals() else ida_boylam
-                    traveled_dist = nav.haversine(ida_enlem, ida_boylam, s_lat, s_lon)
-
-                    # --- GÖREV BİTİŞ KONTROLÜ (ESKİ IF BLOĞUNUN YERİNE GELEN KISIM) ---
-                    # Şart 1: Çıkış noktasına geldik mi? (< 3m)
-                    # Şart 2: En az 15 metre yol gittik mi? (İki kapıyı da geçtik mi?)
-
-                    MIN_CHANNEL_LENGTH = 10.0  # Metre (Kanalın tahmini uzunluğu)
-
-                    if dist_to_exit < 2.0 and traveled_dist > MIN_CHANNEL_LENGTH:
-                        print(
-                            f"{Fore.GREEN}[GÖREV] Task 1 Tamamlandı (Mesafe: {traveled_dist:.1f}m) -> Task 2 Başlıyor{Style.RESET_ALL}")
-                        mevcut_gorev = "TASK2_APPROACH"
-
-                    elif dist_to_exit < 2.0:
-                        # Çıkışa geldik sanıyor ama daha çok az yol gitmişiz.
-                        # Demek ki GPS hatası var veya ilk kapıdayız. BİTİRME, DEVAM ET.
-                        pass
-                        # print(f"[BİLGİ] Çıkış noktasındayız ama mesafe kısa ({traveled_dist:.1f}m). Devam ediliyor...")
+                    # 2. Geçiş Kontrolü (2 Metre)
+                    dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
+                    if dist_to_wp < 2.0:
+                        print(f"{Fore.GREEN}[TASK1] Waypoint {mevcut_gorev} Reached!{Style.RESET_ALL}")
+                        if mevcut_gorev == "TASK1_STATE_ENTER":
+                            mevcut_gorev = "TASK1_STATE_MID"
+                        elif mevcut_gorev == "TASK1_STATE_MID":
+                            mevcut_gorev = "TASK1_STATE_EXIT"
+                        else:
+                            mevcut_gorev = "TASK2_APPROACH"
+                            print(f"{Fore.GREEN}[TASK1] Tamamlandı -> Task 2 Başlıyor{Style.RESET_ALL}")
 
                 # --- GÖREV 2: DEBRIS (ENGEL SAHASI) ---
                 # TASK 2: DEBRIS CLEARANCE (EKMEK KIRINTISI / BREADCRUMB SİSTEMİ)
@@ -2115,6 +2095,82 @@ def main():
                                     FWD = 1580  # Yavaş İleri
                                     controller.set_servo(cfg.SOL_MOTOR, int(FWD + rot))
                                     controller.set_servo(cfg.SAG_MOTOR, int(FWD - rot))
+
+                            # --- TASK 1 CUSTOM CONTROL (Heading/Spot Turn) ---
+                            elif mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT"]:
+                                # 1. Vision Scan (Re-parse detections for Red/Green Pair)
+                                visual_bearing = None
+                                best_red = None
+                                best_green = None
+
+                                if detections:
+                                    coords = detections.xyxy.tolist()
+                                    cids = detections.class_id.tolist()
+                                    reds = []
+                                    greens = []
+
+                                    for i, cid in enumerate(cids):
+                                        x1, y1, x2, y2 = map(int, coords[i])
+                                        cx = int((x1 + x2) / 2)
+                                        cy = int((y1 + y2) / 2)
+
+                                        # Depth check
+                                        err, dist_m = depth.get_value(cx, cy)
+                                        if np.isnan(dist_m) or np.isinf(dist_m) or dist_m > 10.0:
+                                            continue
+
+                                        if cid in [0, 3, 5]: reds.append((dist_m, cx))
+                                        elif cid in [1, 4, 12]: greens.append((dist_m, cx))
+
+                                    if reds: best_red = min(reds, key=lambda x: x[0])
+                                    if greens: best_green = min(greens, key=lambda x: x[0])
+
+                                    if best_red and best_green:
+                                        # Check if they form a gate (similar distance)
+                                        if abs(best_red[0] - best_green[0]) < 2.5:
+                                            gate_cx = (best_red[1] + best_green[1]) / 2
+
+                                            # Calculate Bearing
+                                            hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
+                                            pixel_offset = (gate_cx - (width / 2)) / width
+                                            angle_offset = pixel_offset * hfov_rad
+                                            visual_bearing = magnetic_heading + math.degrees(angle_offset)
+
+                                # 2. Select Target Bearing
+                                final_bearing = 0
+                                if visual_bearing is not None:
+                                    final_bearing = visual_bearing
+                                else:
+                                    if target_lat is not None:
+                                        final_bearing = nav.calculate_bearing(ida_enlem, ida_boylam, target_lat, target_lon)
+                                    else:
+                                        final_bearing = magnetic_heading
+
+                                # 3. Calculate Error & Control
+                                heading_err = nav.signed_angle_difference(magnetic_heading, final_bearing)
+
+                                # Spot Turn Check
+                                threshold = getattr(cfg, 'SPOT_TURN_THRESHOLD', 45.0)
+                                spot_pwm = getattr(cfg, 'SPOT_TURN_PWM', 200)
+
+                                if abs(heading_err) > threshold:
+                                    # Spot Turn
+                                    if heading_err > 0: # Target Right
+                                        controller.set_servo(cfg.SOL_MOTOR, 1500 + spot_pwm)
+                                        controller.set_servo(cfg.SAG_MOTOR, 1500 - spot_pwm)
+                                    else: # Target Left
+                                        controller.set_servo(cfg.SOL_MOTOR, 1500 - spot_pwm)
+                                        controller.set_servo(cfg.SAG_MOTOR, 1500 + spot_pwm)
+                                else:
+                                    # Forward P-Control
+                                    kp = 1.0
+                                    corr = heading_err * kp
+                                    fwd = cfg.BASE_PWM + 100
+
+                                    sol = int(np.clip(fwd + corr, 1100, 1900))
+                                    sag = int(np.clip(fwd - corr, 1100, 1900))
+                                    controller.set_servo(cfg.SOL_MOTOR, sol)
+                                    controller.set_servo(cfg.SAG_MOTOR, sag)
 
                             # --- STANDART A* SÜRÜŞÜ (TASK 1, 2, 3 - PLANNER VARSA) ---
                             elif current_path:
