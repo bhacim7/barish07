@@ -2003,7 +2003,7 @@ def main():
                         # 1. HARİTAYI AL
                         # Task 2 dönerken Yeşili, Task 3 dönerken Sarıyı yoksay
                         ignore_green_buoys = (mevcut_gorev == "TASK2_GREEN_MARKER_FOUND")
-                        ignore_yellow_buoys = (mevcut_gorev == "TASK3_CIRCLE")
+                        ignore_yellow_buoys = (mevcut_gorev in ["TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"])
 
                         nav_map, inflated_mask = get_inflated_nav_map(costmap_img,
                                                                       ignore_green=ignore_green_buoys,
@@ -2014,7 +2014,7 @@ def main():
 
                         # DURUM A: Manuel Override (Task 2 veya Task 3 Circling)
                         if (
-                                mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_CIRCLE"]) and 'override_target_x' in locals():
+                                mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"]) and 'override_target_x' in locals():
                             tx_world = override_target_x
                             ty_world = override_target_y
 
