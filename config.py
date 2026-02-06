@@ -97,6 +97,9 @@ else:
     # T2 Başlangıcı (Referans)
     T2_ZONE_ENTRY_LAT = 40.80916
     T2_ZONE_ENTRY_LON = 29.261915
+    # TASK 2 (ADDED)
+    T2_ZONE_MID_LAT = 40.8090576
+    T2_ZONE_MID_LON = 29.2619221
     # T2 Bitişi (Hedef Burası)
     T2_ZONE_END_LAT = 40.8089552
     T2_ZONE_END_LON = 29.2619292
@@ -124,6 +127,4 @@ else:
 
     # Başlangıç Görevi
     MEVCUT_GOREV = "TASK3_APPROACH"
-# TASK 2 (ADDED)
-T2_ZONE_MID_LAT = 40.8090576
-T2_ZONE_MID_LON = 29.2619221
+
