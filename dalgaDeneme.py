@@ -1586,148 +1586,144 @@ def main():
                         elif mevcut_gorev == "TASK1_STATE_MID":
                             mevcut_gorev = "TASK1_STATE_EXIT"
                         else:
-                            mevcut_gorev = "TASK2_APPROACH"
-                            print(f"{Fore.GREEN}[TASK1] Tamamlandı -> Task 2 Başlıyor{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK2_START"
+                            print(f"{Fore.GREEN}[TASK1] Tamamlandı -> Task 2 Başlıyor (TASK2_START){Style.RESET_ALL}")
 
-                # --- GÖREV 2: DEBRIS (ENGEL SAHASI) ---
-                # TASK 2: DEBRIS CLEARANCE (EKMEK KIRINTISI / BREADCRUMB SİSTEMİ)
+                # --- GÖREV 2: DEBRIS (ENGEL SAHASI) - STATE MACHINE ---
+                # STATES: TASK2_START -> GO_TO_MID -> GO_TO_END -> SEARCH_PATTERN -> GREEN_MARKER_FOUND -> RETURN_HOME
                 # ---------------------------------------------------------------------
 
-                # Global liste tanımları (Döngü başında sıfırlanmaması için kontrol et)
+                if 'task2_breadcrumbs' not in globals():
+                    global task2_breadcrumbs
+                    task2_breadcrumbs = []
 
-                if 'task2_path_history' not in globals():
-                    global task2_path_history
-                    task2_path_history = []
-
-                # AŞAMA 1: SAHAYA GİDİŞ (KAYIT MODU)
-                elif mevcut_gorev == "TASK2_APPROACH":
-                    # HEDEF: Önce Giriş Kapısının Ağzına Git
+                if mevcut_gorev == "TASK2_START":
+                    # 1. T2_ZONE_ENTRY'ye git (Spot Turn Logic ile)
                     target_lat = cfg.T2_ZONE_ENTRY_LAT
                     target_lon = cfg.T2_ZONE_ENTRY_LON
 
-                    # --- EKMEK KIRINTISI KAYDI (Burada da olsun ki dönüş yolu eksik kalmasın) ---
+                    # Transition: 2m yaklaşınca
+                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                        print(f"{Fore.GREEN}[TASK2] ENTRY REACHED -> GO_TO_MID{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK2_GO_TO_MID"
 
-                    if len(task2_path_history) == 0:
-                        task2_path_history.append((ida_enlem, ida_boylam))
+                elif mevcut_gorev == "TASK2_GO_TO_MID":
+                    # 2. T2_ZONE_MID'e git (A* / Pure Pursuit)
+                    target_lat = cfg.T2_ZONE_MID_LAT
+                    target_lon = cfg.T2_ZONE_MID_LON
+
+                    # Breadcrumbs (3 metrede bir)
+                    if len(task2_breadcrumbs) == 0:
+                        task2_breadcrumbs.append((ida_enlem, ida_boylam))
                     else:
-                        last_lat, last_lon = task2_path_history[-1]
-                        # Girişe giderken de iz bırakalım
-                        if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 5.0:
-                            task2_path_history.append((ida_enlem, ida_boylam))
+                        last_lat, last_lon = task2_breadcrumbs[-1]
+                        if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 3.0:
+                             task2_breadcrumbs.append((ida_enlem, ida_boylam))
+                             # print(f"[TASK2] Breadcrumb Added: {len(task2_breadcrumbs)}")
 
-                    # Giriş noktasına 3 metre yaklaştık mı?
-                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 3.0:
-                        print(f"{Fore.YELLOW}[GÖREV] Giriş Kapısına Varıldı -> Parkur Geçişi Başlıyor{Style.RESET_ALL}")
-                        mevcut_gorev = "TASK2_CROSSING"  # YENİ AŞAMAYA GEÇ
+                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                        print(f"{Fore.GREEN}[TASK2] MID REACHED -> GO_TO_END{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK2_GO_TO_END"
 
-                    # AŞAMA 2: PARKURU GEÇ (END NOKTASINA GİT)
-                elif mevcut_gorev == "TASK2_CROSSING":
-                    # HEDEF: Artık Sona Gidebiliriz
+                elif mevcut_gorev == "TASK2_GO_TO_END":
+                    # 3. T2_ZONE_END'e git (A* / Pure Pursuit)
                     target_lat = cfg.T2_ZONE_END_LAT
                     target_lon = cfg.T2_ZONE_END_LON
 
-                    # --- EKMEK KIRINTISI KAYDI (Devam) ---
-                    if len(task2_path_history) > 0:
-                        last_lat, last_lon = task2_path_history[-1]
-                        if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 5.0:
-                            task2_path_history.append((ida_enlem, ida_boylam))
-                            print(f"[PATH] Yeni İz Bırakıldı: {len(task2_path_history)}. Nokta")
+                    # Breadcrumbs
+                    if len(task2_breadcrumbs) > 0:
+                         last_lat, last_lon = task2_breadcrumbs[-1]
+                         if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 3.0:
+                              task2_breadcrumbs.append((ida_enlem, ida_boylam))
+                              # print(f"[TASK2] Breadcrumb Added: {len(task2_breadcrumbs)}")
 
-                    # Parkur sonuna 3 metre kala (Senin isteğinle azalttık) Gösterge Arama moduna geç
-                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 3.0:
-                        print(f"{Fore.YELLOW}[GÖREV] Parkur Sonu -> Gösterge Aranıyor{Style.RESET_ALL}")
-                        mevcut_gorev = "TASK2_SCAN_INDICATOR"
+                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                        print(f"{Fore.GREEN}[TASK2] END REACHED -> SEARCH_PATTERN{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK2_SEARCH_PATTERN"
+                        # Search Pattern değişkenlerini sıfırla
+                        task2_search_phase = 0
+                        task2_search_laps = 0
+                        task2_search_center_x = robot_x
+                        task2_search_center_y = robot_y
 
-                # AŞAMA 2: GÖSTERGE ARAMA (KAYIT MODU DEVAM)
-                elif mevcut_gorev == "TASK2_SCAN_INDICATOR":
-                    # Hala ilerliyoruz, kayda devam (Tur atmaya başlayınca duracağız)
-                    if len(task2_path_history) > 0:
-                        last_lat, last_lon = task2_path_history[-1]
-                        if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 5.0:
-                            task2_path_history.append((ida_enlem, ida_boylam))
+                elif mevcut_gorev == "TASK2_SEARCH_PATTERN":
+                    # Search for Green Marker (Class ID 4)
+                    # 2 Laps (8 phases) around task2_search_center_x,y
 
-                    # Yeşil Göstergeyi Ara
-                    green_indicator = None
+                    # 1. Check for Green Marker
+                    found_green = None
                     if landmarks_memory:
-                        candidates = [lm for lm in landmarks_memory if
-                                      lm["color"] == "GREEN" and lm["confidence"] > 2]
-                        if candidates:
-                            candidates.sort(
-                                key=lambda lm: math.sqrt((lm["x"] - robot_x) ** 2 + (lm["y"] - robot_y) ** 2))
-                            green_indicator = candidates[0]
+                         # Filter for GREEN and proximity
+                         for lm in landmarks_memory:
+                             if lm["color"] == "GREEN":
+                                 # Distance check to ensure it's the one we are looking for (optional)
+                                 found_green = lm
+                                 break
 
-                    if green_indicator:
-                        dist_to_ind = math.sqrt(
-                            (green_indicator["x"] - robot_x) ** 2 + (green_indicator["y"] - robot_y) ** 2)
+                    if found_green:
+                        print(f"{Fore.GREEN}[TASK2] GREEN MARKER FOUND! -> CIRCLING OBJECT{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK2_GREEN_MARKER_FOUND"
+                        task2_search_center_x = found_green["x"]
+                        task2_search_center_y = found_green["y"]
+                        task2_search_phase = 0
+                        task2_search_laps = 0
 
-                        if dist_to_ind < 4.0:
-                            print(f"{Fore.CYAN}[GÖREV] Yaklaşıldı -> YÖRÜNGE MODU BAŞLIYOR{Style.RESET_ALL}")
-
-                            # Son konumumuzu da ekleyelim ki dönüş buradan başlasın
-                            task2_path_history.append((ida_enlem, ida_boylam))
-
-                            mevcut_gorev = "TASK2_CIRCLE"
-                            task2_circle_phase = 0
-                            target_lat = None
                     else:
-                        # Gösterge yoksa Parkur Sonuna gitmeye devam
-                        target_lat = cfg.T2_ZONE_END_LAT
-                        target_lon = cfg.T2_ZONE_END_LON
-
-                # AŞAMA 3: YEŞİL ETRAFINDA TUR (KAYIT YOK)
-                elif mevcut_gorev == "TASK2_CIRCLE":
-                    # Yeşil şamandıra konumunu al
-                    green_indicator = None
-                    if landmarks_memory:
-                        candidates = [lm for lm in landmarks_memory if lm["color"] == "GREEN"]
-                        if candidates:
-                            candidates.sort(
-                                key=lambda lm: math.sqrt((lm["x"] - robot_x) ** 2 + (lm["y"] - robot_y) ** 2))
-                            green_indicator = candidates[0]
-
-                    if green_indicator:
-                        gx, gy = green_indicator["x"], green_indicator["y"]
+                        # Continue Pattern
                         R = 2.0
+                        # 4 points per lap. 2 laps = 8 points.
+                        # Phase 0-3: Lap 1, Phase 4-7: Lap 2
 
-                        # 4 Noktalı Kare Yörünge (Saat Yönü Tersi)
-                        off_x, off_y = 0, 0
-                        if task2_circle_phase == 0:
-                            off_x, off_y = R, 0  # Sağ
-                        elif task2_circle_phase == 1:
-                            off_x, off_y = 0, R  # Arka
-                        elif task2_circle_phase == 2:
-                            off_x, off_y = -R, 0  # Sol
-                        elif task2_circle_phase == 3:
-                            off_x, off_y = 0, -R  # Ön
-                        elif task2_circle_phase == 4:
-                            print(
-                                f"{Fore.GREEN}[GÖREV] Tur Bitti -> İZLERİ TAKİP ET (EVE DÖNÜŞ){Style.RESET_ALL}")
-                            mevcut_gorev = "TASK2_RETURN"
+                        if task2_search_phase >= 8:
+                            print(f"{Fore.RED}[TASK2] MARKER NOT FOUND (TIMEOUT) -> RETURN HOME{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK2_RETURN_HOME"
+                        else:
+                            # Calculate target point on circle
+                            # Angles: 0, 90, 180, 270 (deg) -> 0, pi/2, pi, 3pi/2
+                            phase_mod = task2_search_phase % 4
+                            angle_rad = phase_mod * (math.pi / 2.0)
 
-                        if task2_circle_phase < 4:
-                            override_target_x = gx + off_x
-                            override_target_y = gy + off_y
+                            # Target point
+                            override_target_x = task2_search_center_x + (R * math.cos(angle_rad))
+                            override_target_y = task2_search_center_y + (R * math.sin(angle_rad))
 
-                            if math.sqrt((override_target_x - robot_x) ** 2 + (
-                                    override_target_y - robot_y) ** 2) < 1.0:
-                                print(f"[TASK2] Tur Noktası {task2_circle_phase} Tamam.")
-                                task2_circle_phase += 1
+                            # Check arrival
+                            dist_to_wp = math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2)
+                            if dist_to_wp < 1.0:
+                                print(f"[TASK2] Search Phase {task2_search_phase} Reached.")
+                                task2_search_phase += 1
 
-                # AŞAMA 4: EVE DÖNÜŞ (EKMEK KIRINTILARINI TOPLA)
-                elif mevcut_gorev == "TASK2_RETURN":
-                    # Listede geri dönülecek nokta var mı?
-                    if len(task2_path_history) > 0:
-                        # Listenin SONUNDAKİ (en son kaydettiğimiz) noktayı hedef al
-                        target_lat, target_lon = task2_path_history[-1]
+                elif mevcut_gorev == "TASK2_GREEN_MARKER_FOUND":
+                     # Circle the object (2m radius, 2 laps)
+                     R = 2.0
 
-                        # O noktaya ulaştık mı? (3 metre tolerans)
-                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 3.0:
-                            print(f"[PATH] Geri Dönüş Noktası Ulaşıldı. Kalan: {len(task2_path_history) - 1}")
-                            task2_path_history.pop()  # Listeden sil, bir öncekine geç
+                     if task2_search_phase >= 8:
+                         print(f"{Fore.GREEN}[TASK2] OBJECT CIRCLED -> RETURN HOME{Style.RESET_ALL}")
+                         mevcut_gorev = "TASK2_RETURN_HOME"
+                     else:
+                         phase_mod = task2_search_phase % 4
+                         angle_rad = phase_mod * (math.pi / 2.0)
+
+                         override_target_x = task2_search_center_x + (R * math.cos(angle_rad))
+                         override_target_y = task2_search_center_y + (R * math.sin(angle_rad))
+
+                         dist_to_wp = math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2)
+                         if dist_to_wp < 1.0:
+                             print(f"[TASK2] Object Circle Phase {task2_search_phase} Reached.")
+                             task2_search_phase += 1
+
+                elif mevcut_gorev == "TASK2_RETURN_HOME":
+                    # Retrace breadcrumbs
+                    if len(task2_breadcrumbs) > 0:
+                        target_lat, target_lon = task2_breadcrumbs[-1]
+
+                        # Check arrival
+                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                            print(f"[TASK2] Breadcrumb Reached. Remaining: {len(task2_breadcrumbs)-1}")
+                            task2_breadcrumbs.pop()
                     else:
-                        # Liste bittiyse başlangıç noktasına (veya Task 1 çıkışına) varmışız demektir.
-                        print(
-                            f"{Fore.GREEN}[GÖREV] Task 2 (Geri Dönüş) TAMAMLANDI -> Task 3 Bekleniyor{Style.RESET_ALL}")
+                        # Reached start or list empty
+                        print(f"{Fore.GREEN}[TASK2] RETURN HOME COMPLETE -> NEXT TASK (TASK3){Style.RESET_ALL}")
                         mevcut_gorev = "TASK3_APPROACH"
 
                 # ---------------------------------------------------------------------
@@ -1961,7 +1957,7 @@ def main():
 
                         # 1. HARİTAYI AL
                         # Task 2 dönerken Yeşili, Task 3 dönerken Sarıyı yoksay
-                        ignore_green_buoys = (mevcut_gorev == "TASK2_CIRCLE")
+                        ignore_green_buoys = (mevcut_gorev == "TASK2_GREEN_MARKER_FOUND")
                         ignore_yellow_buoys = (mevcut_gorev == "TASK3_CIRCLE")
 
                         nav_map, inflated_mask = get_inflated_nav_map(costmap_img,
@@ -2096,14 +2092,14 @@ def main():
                                     controller.set_servo(cfg.SOL_MOTOR, int(FWD + rot))
                                     controller.set_servo(cfg.SAG_MOTOR, int(FWD - rot))
 
-                            # --- TASK 1 CUSTOM CONTROL (Heading/Spot Turn) ---
-                            elif mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT"]:
-                                # 1. Vision Scan (Re-parse detections for Red/Green Pair)
+                            # --- TASK 1 & TASK 2 START CUSTOM CONTROL (Heading/Spot Turn) ---
+                            elif mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT", "TASK2_START"]:
+                                # 1. Vision Scan (Re-parse detections for Red/Green Pair) - ONLY FOR TASK 1
                                 visual_bearing = None
                                 best_red = None
                                 best_green = None
 
-                                if detections:
+                                if detections and mevcut_gorev.startswith("TASK1"):
                                     coords = detections.xyxy.tolist()
                                     cids = detections.class_id.tolist()
                                     reds = []
