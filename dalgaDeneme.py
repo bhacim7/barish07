@@ -964,7 +964,10 @@ def main():
     # --- YENİ PLANLAMA DEĞİŞKENLERİ ---
     current_path = []  # Hesaplanan rota burada tutulacak
     plan_timer = 0  # A* algoritmasını yavaşlatmak için sayaç
-    prev_heading_error = 0.0
+    # prev_heading_error = 0.0  # DEPRECATED: Managed by PathPlanner
+
+    # Initialize PathPlanner Agent
+    path_planner = planner.PathPlanner()
 
     try:
         while True:
@@ -2010,7 +2013,7 @@ def main():
                         if plan_timer > 4:
                             plan_timer = 0
                             if tx_world is not None:
-                                new_path = planner.get_path_plan(
+                                new_path = path_planner.get_path_plan(
                                     (robot_x, robot_y), (tx_world, ty_world), nav_map,
                                     costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX
                                 )
@@ -2126,11 +2129,15 @@ def main():
                                 if mevcut_gorev in ["TASK3_ENTER", "TASK3_RETURN"]:
                                     current_base_pwm += getattr(cfg, "T3_SPEED_PWM", 100)
 
-                                pp_sol, pp_sag, raw_target, current_error = planner.pure_pursuit_control(
+                                # Get current horizontal speed
+                                hs = controller.get_horizontal_speed()
+                                if hs is None: hs = 0.0
+
+                                pp_sol, pp_sag, raw_target, current_error = path_planner.pure_pursuit_control(
                                     robot_x, robot_y, robot_yaw, current_path, base_speed=current_base_pwm,
-                                    prev_error=prev_heading_error
+                                    current_speed_mps=hs
                                 )
-                                prev_heading_error = current_error
+                                # prev_heading_error = current_error # DEPRECATED: Managed by PathPlanner
 
                                 # --- TARGET SMOOTHING (HEDEF YUMUŞATMA) ---
                                 # Hedef aniden zıplamasın, %70 eski hedefi koru.
