@@ -1969,7 +1969,7 @@ def main():
 
                         # DURUM A: Manuel Override (Task 2 veya Task 3 Circling)
                         if (
-                                mevcut_gorev == "TASK2_CIRCLE" or mevcut_gorev == "TASK3_CIRCLE") and 'override_target_x' in locals():
+                                mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_CIRCLE"]) and 'override_target_x' in locals():
                             tx_world = override_target_x
                             ty_world = override_target_y
 
