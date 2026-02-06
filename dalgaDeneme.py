@@ -964,6 +964,7 @@ def main():
     # --- YENİ PLANLAMA DEĞİŞKENLERİ ---
     current_path = []  # Hesaplanan rota burada tutulacak
     plan_timer = 0  # A* algoritmasını yavaşlatmak için sayaç
+    prev_heading_error = 0.0
 
     try:
         while True:
@@ -1512,9 +1513,26 @@ def main():
                 if frame_hazir:
                     if zed.get_sensors_data(sensors_data, sl.TIME_REFERENCE.CURRENT):
                         if ts_handler.is_new(sensors_data.get_imu_data()):
+                            # 1. ZED Heading (Base)
                             raw_heading = sensors_data.get_magnetometer_data().magnetic_heading
-                            magnetic_heading = magnetic_filter.update(raw_heading)
-                            magnetic_heading = (magnetic_heading + 6) % 360
+                            zed_heading = magnetic_filter.update(raw_heading)
+                            zed_heading = (zed_heading + 6) % 360
+
+                            # 2. FC Heading
+                            fc_heading = controller.get_heading()
+
+                            # 3. Kaynak Seçimi (Config)
+                            heading_source = getattr(cfg, 'HEADING_SOURCE', 'ZED')
+
+                            if heading_source == 'FC' and fc_heading is not None:
+                                magnetic_heading = fc_heading
+                            elif heading_source == 'FUSED' and fc_heading is not None:
+                                # Açısal Ortalama
+                                diff = nav.signed_angle_difference(zed_heading, fc_heading)
+                                magnetic_heading = (zed_heading + (diff * 0.5)) % 360
+                            else:
+                                magnetic_heading = zed_heading
+
                             heading_dogruluk = sensors_data.get_magnetometer_data().magnetic_heading_accuracy
                             if magnetic_heading is None:
                                 pass
@@ -2108,9 +2126,11 @@ def main():
                                 if mevcut_gorev in ["TASK3_ENTER", "TASK3_RETURN"]:
                                     current_base_pwm += getattr(cfg, "T3_SPEED_PWM", 100)
 
-                                pp_sol, pp_sag, raw_target = planner.pure_pursuit_control(
-                                    robot_x, robot_y, robot_yaw, current_path, base_speed=current_base_pwm
+                                pp_sol, pp_sag, raw_target, current_error = planner.pure_pursuit_control(
+                                    robot_x, robot_y, robot_yaw, current_path, base_speed=current_base_pwm,
+                                    prev_error=prev_heading_error
                                 )
+                                prev_heading_error = current_error
 
                                 # --- TARGET SMOOTHING (HEDEF YUMUŞATMA) ---
                                 # Hedef aniden zıplamasın, %70 eski hedefi koru.

@@ -74,6 +74,55 @@ def a_star_search(grid, start, goal):
 #  ANA PLANLAYICI FONKSİYONU (PATRON İÇİN ARAYÜZ)
 # =============================================================================
 
+def smooth_path(path_world, weight_data=0.5, weight_smooth=0.1, tolerance=0.00001):
+    """
+    Basit bir yol yumuşatma algoritması (Gradient Descent benzeri).
+    Grid köşeli olduğu için robot zikzak çizebilir, bu fonksiyon yolu yumuşatır.
+    """
+    if not path_world:
+        return path_world
+
+    new_path = list(path_world)  # Derin kopya
+    change = tolerance
+    while change >= tolerance:
+        change = 0.0
+        for i in range(1, len(path_world) - 1):
+            for j in range(2): # x ve y için
+                aux = new_path[i][j]
+                new_path[i] = list(new_path[i]) # Tuple -> List
+                new_path[i][j] += weight_data * (path_world[i][j] - new_path[i][j]) + \
+                                  weight_smooth * (new_path[i - 1][j] + new_path[i + 1][j] - 2.0 * new_path[i][j])
+                new_path[i] = tuple(new_path[i]) # List -> Tuple
+                change += abs(aux - new_path[i][j])
+
+    return new_path
+
+def find_nearest_free_point(grid, point, search_radius=5):
+    """
+    Eğer nokta engelse (0), çevresindeki en yakın serbest noktayı (255) bulur.
+    point: (x, y) grid koordinatı
+    """
+    h, w = grid.shape
+    px, py = point
+
+    # Zaten boşsa direkt dön
+    if 0 <= px < w and 0 <= py < h and grid[py, px] != 0:
+        return point
+
+    # Spiral şeklinde ara
+    for r in range(1, search_radius + 1):
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                # Sadece çemberin kenarlarına bak (içine zaten baktık)
+                if abs(dx) != r and abs(dy) != r:
+                    continue
+
+                nx, ny = px + dx, py + dy
+                if 0 <= nx < w and 0 <= ny < h:
+                    if grid[ny, nx] != 0:
+                        return (nx, ny)
+    return None
+
 def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size):
     """
     Bu fonksiyon ana koddan (deneme.py) çağrılır.
@@ -83,10 +132,15 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
     """
     if high_res_map is None: return None
 
-    # 1. KÜÇÜLTME (Downsampling) - Performans İçin
+    # 1. KÜÇÜLTME (Downsampling) - Performans ve Güvenlik
+    # Engel Kaybını Önleme: Önce Erosion yap (Siyahları genişlet)
+    # Böylece küçültürken 1 piksel olan engel kaybolmaz.
+    kernel = np.ones((3, 3), np.uint8)
+    eroded_map = cv2.erode(high_res_map, kernel, iterations=1)
+
     # 800x800 haritayı 100x100 (1/8) oranında küçültüyoruz.
     SCALE = 0.125
-    low_res_grid = cv2.resize(high_res_map, None, fx=SCALE, fy=SCALE, interpolation=cv2.INTER_NEAREST)
+    low_res_grid = cv2.resize(eroded_map, None, fx=SCALE, fy=SCALE, interpolation=cv2.INTER_NEAREST)
 
     # 2. Koordinat Dönüşümü (Dünya -> Grid Pikselleri)
     cw, ch = costmap_size[0] // 2, costmap_size[1] // 2
@@ -113,13 +167,18 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
     goal_grid = (min(max(0, goal_grid[0]), w_grid - 1), min(max(0, goal_grid[1]), h_grid - 1))
 
     # A* Çalıştırmadan Önce: Başlangıç veya Hedef duvarın içinde mi?
-    # Eğer öyleyse A* sonsuz döngüye girmesin diye iptal et.
+    # Kurtarma Modu: En yakın boş noktayı bul.
     if low_res_grid[start_grid[1], start_grid[0]] == 0:
-        # print("[PLAN] Robot duvarın içinde!")
-        return None
+        # print("[PLAN] Robot duvarın içinde! Kurtarma noktası aranıyor...")
+        start_grid = find_nearest_free_point(low_res_grid, start_grid)
+        if start_grid is None:
+             return None
+
     if low_res_grid[goal_grid[1], goal_grid[0]] == 0:
-        # print("[PLAN] Hedef duvarın içinde!")
-        return None
+        # print("[PLAN] Hedef duvarın içinde! Yakın nokta aranıyor...")
+        goal_grid = find_nearest_free_point(low_res_grid, goal_grid)
+        if goal_grid is None:
+            return None
 
     # 3. A* ÇALIŞTIR
     path_grid = a_star_search(low_res_grid, start_grid, goal_grid)
@@ -140,6 +199,9 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
 
         final_path_world.append((wx, wy))
 
+    # 5. YOL YUMUŞATMA (Smoothing)
+    final_path_world = smooth_path(final_path_world)
+
     return final_path_world
 
 
@@ -147,12 +209,13 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
 #  PURE PURSUIT (MOTOR KONTROL)
 # =============================================================================
 
-def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, base_speed=1500, max_pwm_change=60):
+def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, base_speed=1500, max_pwm_change=60, prev_error=0.0):
     """
     Verilen yolu takip etmek için gereken motor PWM değerlerini hesaplar.
+    PID Kontrolü eklenmiştir.
     """
     if not path or len(path) < 2:
-        return 1500, 1500, None
+        return 1500, 1500, None, 0.0
 
     # 1. Lookahead (Tavşan) Noktasını Bul
     # --- ADAPTIVE LOOKAHEAD (VİRAJDA KISALAN BAKIŞ) ---
@@ -194,17 +257,28 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, base_speed=1500, max
     # -PI ile +PI arasına normalize et
     alpha = (alpha + math.pi) % (2 * math.pi) - math.pi
 
-    # 3. PWM Hesapla (Oransal Kontrol)
-    TURN_KP = 200.0  # Dönüş sertliği
-    turn_cmd = alpha * TURN_KP
-    turn_cmd = np.clip(turn_cmd, -150, 150)
+    # 3. PWM Hesapla (PID Kontrol)
+    # Hata: alpha (Radyan cinsinden açı farkı)
 
-    # Virajlarda yavaşlama (Opsiyonel)
-    current_speed_pwm = 80  # config.CRUISE_PWM yerine sabit veya parametre
-    if abs(alpha) > math.radians(20):
-        current_speed_pwm *= 0.7
+    TURN_KP = 250.0  # Oransal (Biraz artırdık)
+    TURN_KD = 50.0   # Türev (Titremeyi önler)
+
+    # Türev hesabı (Hata değişimi)
+    error_diff = alpha - prev_error
+
+    turn_cmd = (alpha * TURN_KP) + (error_diff * TURN_KD)
+    turn_cmd = np.clip(turn_cmd, -200, 200)
+
+    # Virajlarda yavaşlama (Velocity Profiling)
+    current_speed_pwm = 80  # Default ek hız
+
+    # Açı hatası büyükse yavaşla
+    if abs(alpha) > math.radians(10):
+        current_speed_pwm *= 0.5
+    if abs(alpha) > math.radians(30):
+        current_speed_pwm = 0 # Çok keskin dönüşte ekstra gaz verme
 
     sol_pwm = int(base_speed + current_speed_pwm - turn_cmd)
     sag_pwm = int(base_speed + current_speed_pwm + turn_cmd)
 
-    return sol_pwm, sag_pwm, target_point
+    return sol_pwm, sag_pwm, target_point, alpha

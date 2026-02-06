@@ -128,6 +128,23 @@ class USVController:
             return math.sqrt(vx ** 2 + vy ** 2)
         return None
 
+    def get_heading(self):
+        """
+        Returns heading in degrees (0-360).
+        Tries GLOBAL_POSITION_INT first, then VFR_HUD.
+        """
+        # Try GLOBAL_POSITION_INT (heading in cdeg)
+        msg = self.msg_dict.get('GLOBAL_POSITION_INT')
+        if msg:
+            return msg.hdg / 100.0  # Convert cdeg to degrees
+
+        # Fallback to VFR_HUD (heading in degrees)
+        msg = self.msg_dict.get('VFR_HUD')
+        if msg:
+            return float(msg.heading)
+
+        return None
+
     def set_servo(self, servo_pin, pwm_value, see_motor_output=0):
         self.master.mav.command_long_send(
             self.master.target_system,

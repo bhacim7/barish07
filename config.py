@@ -30,6 +30,12 @@ MOTOR_RELAY_PIN = 15
 # Röle açıldıktan sonra ESC'lerin dıt-dıt sesini bitirmesi için beklenir.
 ESC_INIT_DELAY = 3.0
 
+# Heading Kaynağı Seçimi
+# "ZED": Sadece ZED2i Manyetometresi (Mevcut Sistem)
+# "FC": Sadece Uçuş Kontrol Kartı (Orange Cube / Pixhawk)
+# "FUSED": İkisinin Ortalaması (Basit Füzyon)
+HEADING_SOURCE = "ZED"
+
 
 # =============================================================================
 # MODA ÖZEL AYARLAR
