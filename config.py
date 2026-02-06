@@ -1,0 +1,114 @@
+import os
+
+# =============================================================================
+# ÇALIŞMA MODU SEÇİMİ
+# =============================================================================
+# "GPS":    Eski kodlar çalışır. Açık alan.
+# "VISION": Kapalı alan. Sadece Lidar ve Kamera.
+NAV_MODE = "GPS"
+
+# =============================================================================
+# ORTAK DONANIM AYARLARI (Her iki modda geçerli)
+# =============================================================================
+SERIAL_PORT = os.getenv("TELEM_PORT", "/dev/ttyUSB1")
+SERIAL_BAUD = int(os.getenv("TELEM_BAUD", "57600"))
+
+SOL_MOTOR=1
+SAG_MOTOR=3
+
+
+BASE_PWM = 1500
+MIN_PWM_LIMIT = 1100
+MAX_PWM_LIMIT = 1900
+
+GPIO_MODE = "BOARD"
+
+# Motor Röle Pinleri
+MOTOR_RELAY_PIN = 15
+
+# ESC Başlatma Bekleme Süresi (Saniye)
+# Röle açıldıktan sonra ESC'lerin dıt-dıt sesini bitirmesi için beklenir.
+ESC_INIT_DELAY = 3.0
+
+
+# =============================================================================
+# MODA ÖZEL AYARLAR
+# =============================================================================
+
+if NAV_MODE == "VISION":
+    # --- VISION (KAPALI ALAN) AYARLARI ---
+    print(">> SISTEM VISION MODUNDA BASLATILIYOR")
+
+    # Lidar ve Güvenlik
+    STREAM = True
+    RECORD_VIDEO = False
+    LIDAR_BAUDRATE = 1000000  # RPLIDAR S3 Hızı
+    LIDAR_MAX_DIST = 10.0  # Tarama menzili
+    LIDAR_ACIL_DURMA_M = 1.0  # (YENİ) Bu mesafede engel varsa ACİL KAÇIŞ yap
+    LIDAR_KORIDOR_KP = 30.0  # Kamera körse Lidar ile ortalama katsayısı
+
+    # Kamera Navigasyon (PID)
+    Kp_PIXEL = 0.3
+    Kd_PIXEL = 0.1
+
+    # Motor ve Hız Kontrolü
+    CRUISE_PWM = 100  # Sabit hız
+    ESCAPE_PWM = 300  # Kaçış şiddeti
+    MAX_PWM_CHANGE = 120  # (YENİ) Ani hız değişim limiti (Yumuşatma için)
+
+else:
+    # --- GPS (AÇIK ALAN) AYARLARI ---
+    print(">> SISTEM GPS MODUNDA BASLATILIYOR")
+
+    # Sistem Ayarları
+    STREAM = True  # Yer istasyonuna görüntü basılsın mı?
+    RECORD_VIDEO = False  # SD karta kayıt yapılsın mı?
+    SHOW_LOCAL_WINDOW = False  # True: Monitörde pencere aç, False: Arka planda çalış
+    YOLO_CONFIDENCE = 0.40  # Hava durumuna göre düşürüp artırabilirsin
+    CAM_HFOV = 110.0  # ZED 2i Yatay Görüş Açısı (Derece)
+
+    # Sürüş Katsayıları
+    KpACI = 2.5  # Sadece A* çalışmazsa devreye giren 'Plan B' için kullanılır.
+
+    # Task 3 için Ekstra Hız (Base PWM üzerine eklenir)
+    T3_SPEED_PWM = 100
+
+    # --- YARIŞMA KOORDİNATLARI (RoboBoat 2026) ---
+
+    # TASK 1: Evacuation Route (Kanal Geçişi)
+    T1_GATE_ENTER_LAT = 40.8630501
+    T1_GATE_ENTER_LON = 29.2599517
+    T1_GATE_EXIT_LAT = 40.8629223
+    T1_GATE_EXIT_LON = 29.2599123
+
+    # TASK 2: Debris Clearance (Engel ve Işık Sahası)
+    # T2 Başlangıcı (Referans)
+    T2_ZONE_ENTRY_LAT = 40.80916
+    T2_ZONE_ENTRY_LON = 29.261915
+    # T2 Bitişi (Hedef Burası)
+    T2_ZONE_END_LAT = 40.8089552
+    T2_ZONE_END_LON = 29.2619292
+
+    # TASK 3: Speed Challenge (Sürat Kapısı)
+    T3_GATE_SEARCH_LAT = 40.8089735
+    T3_GATE_SEARCH_LON = 29.2620113
+    T3_YELLOW_APPROACH_LAT = 40.8089423
+    T3_YELLOW_APPROACH_LON = 29.2621796
+
+    # TASK 5: Docking (Park Etme)
+    T5_DOCK_APPROACH_LAT = 40.8632559
+    T5_DOCK_APPROACH_LON = 29.2594437
+
+    # TASK 6: HARBOR ALERT (SESLİ KOMUT)
+    T6_AUDIO_CHUNK = 2048
+    T6_AUDIO_RATE = 44100
+    T6_AUDIO_CHANNELS = 1
+    T6_TARGET_FREQS = {
+        '600Hz': (570, 630, 6000000),
+        '800Hz': (760, 840, 2000000),
+        '1000Hz': (950, 1050, 6000000),
+        '1200Hz': (1140, 1260, 6000000),
+    }
+
+    # Başlangıç Görevi
+    MEVCUT_GOREV = "TASK3_APPROACH"
