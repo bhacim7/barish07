@@ -2126,8 +2126,14 @@ def main():
                                 if mevcut_gorev in ["TASK3_ENTER", "TASK3_RETURN"]:
                                     current_base_pwm += getattr(cfg, "T3_SPEED_PWM", 100)
 
+                                # Get current speed for Dynamic Pure Pursuit
+                                cur_spd = controller.get_horizontal_speed()
+                                if cur_spd is None: cur_spd = 0.0
+
                                 pp_sol, pp_sag, raw_target, current_error = planner.pure_pursuit_control(
-                                    robot_x, robot_y, robot_yaw, current_path, base_speed=current_base_pwm,
+                                    robot_x, robot_y, robot_yaw, current_path,
+                                    current_speed=cur_spd,
+                                    base_speed=current_base_pwm,
                                     prev_error=prev_heading_error
                                 )
                                 prev_heading_error = current_error

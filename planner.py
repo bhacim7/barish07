@@ -209,47 +209,36 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
 #  PURE PURSUIT (MOTOR KONTROL)
 # =============================================================================
 
-def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, base_speed=1500, max_pwm_change=60, prev_error=0.0):
+def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, base_speed=1500, max_pwm_change=60, prev_error=0.0):
     """
     Verilen yolu takip etmek için gereken motor PWM değerlerini hesaplar.
     PID Kontrolü eklenmiştir.
     """
+    # TUNABLE CONSTANTS
+    MIN_L = 1.0  # Min Lookahead (m)
+    MAX_L = 4.0  # Max Lookahead (m)
+    LOOKAHEAD_GAIN = 0.5  # Speed gain for lookahead
+    BASE_THROTTLE = 80.0  # Base throttle PWM to add to base_speed
+    CURVATURE_GAIN = 8.0  # Gain for speed reduction based on curvature
+
     if not path or len(path) < 2:
         return 1500, 1500, None, 0.0
 
-    # 1. Lookahead (Tavşan) Noktasını Bul
-    # --- ADAPTIVE LOOKAHEAD (VİRAJDA KISALAN BAKIŞ) ---
-    # Normalde 1.5 metreye bak.
-    current_lookahead = 1.5
+    # 1. Dynamic Lookahead Calculation
+    # L_d = np.clip(min_L + (gain * current_speed), min_L, max_L)
+    LOOKAHEAD_DIST = np.clip(MIN_L + (LOOKAHEAD_GAIN * current_speed), MIN_L, MAX_L)
 
-    # Robotun burnu ile yolun gidişatı arasında ne kadar fark var?
-    # Basitçe: Yolun sonundaki (veya ilerideki) noktaya olan açıya bak.
-    # Eğer path yeterince uzunsa, ilerideki bir noktayı referans al.
-    check_idx = min(len(path) - 1, 5)  # 5 nokta ilerisine bak
-    ref_p = path[check_idx]
-
-    desired_angle = math.atan2(ref_p[1] - robot_y, ref_p[0] - robot_x)
-    angle_diff = abs(desired_angle - robot_yaw)
-    # Açıyı normalize et (-PI, +PI)
-    angle_diff = (angle_diff + math.pi) % (2 * math.pi) - math.pi
-    angle_diff = abs(math.degrees(angle_diff))
-
-    # EĞER HATA BÜYÜKSE (20 Dereceden fazla sapma/viraj varsa)
-    if angle_diff > 20:
-        current_lookahead = 0.8  # Çok yakına bak (Kıvrak dön)
-
-    LOOKAHEAD_DIST = current_lookahead
-    # ----------------------------------------------------
+    # 2. Find Lookahead Point
     target_point = path[-1]  # Varsayılan: Yolun sonu
 
-    # Yolu tersten tara (veya baştan), robottan 1.2m uzaktaki ilk noktayı bul
+    # Yolu tersten tara (veya baştan), robottan LOOKAHEAD_DIST kadar uzaktaki ilk noktayı bul
     for p in path:
         dist = math.sqrt((p[0] - robot_x) ** 2 + (p[1] - robot_y) ** 2)
         if dist > LOOKAHEAD_DIST:
             target_point = p
             break
 
-    # 2. Açıyı Hesapla
+    # 3. Calculate Heading Error (Alpha)
     target_angle = math.atan2(target_point[1] - robot_y, target_point[0] - robot_x)
 
     # Hata Açısı (Robotun burnu ile hedef arasındaki fark)
@@ -257,7 +246,7 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, base_speed=1500, max
     # -PI ile +PI arasına normalize et
     alpha = (alpha + math.pi) % (2 * math.pi) - math.pi
 
-    # 3. PWM Hesapla (PID Kontrol)
+    # 4. PWM Hesapla (PID Kontrol)
     # Hata: alpha (Radyan cinsinden açı farkı)
 
     TURN_KP = 250.0  # Oransal (Biraz artırdık)
@@ -269,14 +258,14 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, base_speed=1500, max
     turn_cmd = (alpha * TURN_KP) + (error_diff * TURN_KD)
     turn_cmd = np.clip(turn_cmd, -200, 200)
 
-    # Virajlarda yavaşlama (Velocity Profiling)
-    current_speed_pwm = 80  # Default ek hız
+    # 5. Continuous Speed Profiling
+    # Calculate Curvature (kappa) = 2 * sin(alpha) / L_d
+    # Note: Pure Pursuit curvature approximation
+    kappa = (2 * math.sin(alpha)) / LOOKAHEAD_DIST
 
-    # Açı hatası büyükse yavaşla
-    if abs(alpha) > math.radians(10):
-        current_speed_pwm *= 0.5
-    if abs(alpha) > math.radians(30):
-        current_speed_pwm = 0 # Çok keskin dönüşte ekstra gaz verme
+    # Calculate Speed PWM
+    # speed_pwm = BASE_SPEED / (1 + (CURVATURE_GAIN * abs(kappa)))
+    current_speed_pwm = BASE_THROTTLE / (1.0 + (CURVATURE_GAIN * abs(kappa)))
 
     sol_pwm = int(base_speed + current_speed_pwm - turn_cmd)
     sag_pwm = int(base_speed + current_speed_pwm + turn_cmd)
