@@ -811,6 +811,7 @@ def main():
     global task6_interrupt_request, task6_detected_freq, task6_timestamp
     global task5_dock_timer
     global path_lost_time
+    global costmap_img, costmap_ready
 
     # --- KRİTİK BAŞLANGIÇ DEĞERLERİ (CRASH ÖNLEME) ---
     magnetic_heading = 0.0
@@ -1666,7 +1667,7 @@ def main():
                         coords = detections.xyxy.tolist()
 
                         for i, cid in enumerate(cids):
-                            if cid == 4:  # Green Marker
+                            if cid == 12:  # Green Marker
                                 # Calculate position
                                 x1, y1, x2, y2 = map(int, coords[i])
                                 cx = int((x1 + x2) / 2)
