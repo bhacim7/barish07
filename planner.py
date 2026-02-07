@@ -8,8 +8,9 @@ import numpy as np
 #  A* (A-STAR) ALGORİTMASI ÇEKİRDEĞİ
 # =============================================================================
 
-def heuristic(a, b, weight=1.5):
+def heuristic(a, b, weight=2.5):
     # Euclidean Mesafe (Kuş uçuşu) * Ağırlık
+    # Increased to 2.5 to make planner more aggressive/greedy (Best-First)
     return math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) * weight
 
 

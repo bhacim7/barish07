@@ -126,4 +126,14 @@ else:
     }
 
     # Başlangıç Görevi
+
+    MEVCUT_GOREV = "TASK3_APPROACH"
+
+
+
+# FAILSAFE SETTINGS
+MAP_DECAY_AMOUNT = 2
+BLIND_DRIVE_SECONDS = 3.0
+
     MEVCUT_GOREV = "TASK2_START"
+

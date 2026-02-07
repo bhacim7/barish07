@@ -56,7 +56,7 @@ GATE_COLOR_TOLERANCE = 5.0  # Kapı geçişinde renkler arası maks mesafe fark�
 
 # --- YENİ: NAVİGASYON VE ROBOT FİZİĞİ ---
 ROBOT_RADIUS_M = 0.45  # Robotun yarıçapı (metre) - Gövde genişliği/2 + biraz pay
-INFLATION_MARGIN_M = 0.10  # Ekstra güvenlik payı (Duvara ne kadar yaklaşsın?)
+INFLATION_MARGIN_M = 0.05  # Ekstra güvenlik payı (Duvara ne kadar yaklaşsın?)
 # Toplam Şişirme = 0.60m -> Haritada 6 piksellik gri duvar örülecek.
 
 # Sadece Görüntü Aktarma icin (yarısmada komut satırına alınacak)
@@ -1112,6 +1112,13 @@ def main():
                 if (latest_lidar_timestamp_g > last_mapped_time):
                     mapping_update_lidar(robot_x, robot_y, robot_yaw, local_lidar_scan)
                     last_mapped_time = latest_lidar_timestamp_g
+
+            # --- MAP DECAY (AGGRESSIVE CLEARING) ---
+            # Every loop, brighten the map slightly to remove ghost obstacles
+            if costmap_ready and costmap_img is not None:
+                 decay_amount = getattr(cfg, 'MAP_DECAY_AMOUNT', 0)
+                 if decay_amount > 0:
+                     costmap_img = cv2.add(costmap_img, decay_amount)
 
             # (Güvenlik Önlemi) Tekne çok yatıksa (Dalga), lidar verisini boşalt.
             # Böylece "process_lidar_sectors" fonksiyonu önümüzde engel var sanıp ani fren yapmaz.
@@ -2312,18 +2319,32 @@ def main():
                                 # Lidar verisini al (Her aşamada lazım)
                                 center_danger, left_d, center_d, right_d = process_lidar_sectors(local_lidar_scan, max_dist=10.0)
 
+                                # --- FAZ 0: BLIND GPS FALLBACK (CRITICAL FIX) ---
+                                # If A* fails but we have a valid GPS target, just GO!
+                                blind_drive_dur = getattr(cfg, 'BLIND_DRIVE_SECONDS', 3.0)
+                                if wait_duration < blind_drive_dur and gps_angle is not None and center_d > 1.5:
+                                    print(f"{Back.RED}[FAILSAFE] BLIND GPS DRIVE (Err: {gps_angle:.1f}){Style.RESET_ALL}")
+
+                                    # Simple P-Control
+                                    kp_blind = 1.0
+                                    turn_val = np.clip(gps_angle * kp_blind, -150, 150)
+                                    base_blind = cfg.BASE_PWM + 100
+
+                                    controller.set_servo(cfg.SOL_MOTOR, int(base_blind + turn_val))
+                                    controller.set_servo(cfg.SAG_MOTOR, int(base_blind - turn_val))
+
                                 # ---------------------------------------------------------
-                                # FAZ 1: BEKLE VE GÖZLEM YAP (0 - 2.0 Saniye)
+                                # FAZ 1: BEKLE VE GÖZLEM YAP (Blind süresinden sonra)
                                 # ---------------------------------------------------------
-                                if wait_duration < 2.0:
+                                elif wait_duration < (blind_drive_dur + 2.0):
                                     # Hiçbir şey yapma. Sensörlerin gürültüyü temizlemesine ve
                                     # kameranın yeni bir kare yakalamasına izin ver.
                                     pass
 
                                 # ---------------------------------------------------------
-                                # FAZ 2: MICRO ESCAPE / MİNİK KAÇIŞ (2.0 - 5.0 Saniye)
+                                # FAZ 2: MICRO ESCAPE / MİNİK KAÇIŞ
                                 # ---------------------------------------------------------
-                                elif wait_duration < 5.0:
+                                elif wait_duration < (blind_drive_dur + 5.0):
                                     print(f"{Fore.RED}[PLANNER] Yol Yok -> MICRO ESCAPE (Minik Adımlar){Style.RESET_ALL}")
 
                                     # Yine de önümüz doluysa (Duvar dibindeysek) GİTME!
