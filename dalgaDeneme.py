@@ -204,8 +204,8 @@ def mapping_update_lidar(robot_x, robot_y, robot_yaw_rad, lidar_points):
     empty_mask = np.zeros_like(costmap_img)
     occupied_mask = np.zeros_like(costmap_img)
 
-    FREE_GAIN = 2
-    OCCUPIED_GAIN = 80
+    FREE_GAIN = getattr(cfg, 'LIDAR_FREE_GAIN', 25)
+    OCCUPIED_GAIN = getattr(cfg, 'LIDAR_OCCUPIED_GAIN', 80)
 
     # --- OPTİMİZASYON: Adım atlayarak döngü kur (3'er 3'er atla) ---
     # Bu sayede 600 nokta yerine 200 nokta işleriz.
@@ -1094,7 +1094,7 @@ def main():
 
                 # 3. Dalga Filtresi (Wave Stability Check)
                 # Tekne 7 dereceden fazla yatıyorsa lidar verisini haritaya işleme!
-                MAX_TILT_ANGLE = 7.0
+                MAX_TILT_ANGLE = getattr(cfg, 'MAX_TILT_ANGLE', 5.0)
                 wave_stable = True
 
                 if abs(robot_roll_deg) > MAX_TILT_ANGLE or abs(robot_pitch_deg) > MAX_TILT_ANGLE:
@@ -2046,7 +2046,8 @@ def main():
                                 new_path = planner.get_path_plan(
                                     (robot_x, robot_y), (tx_world, ty_world), nav_map,
                                     costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX,
-                                    bias_to_goal_line=planner_bias
+                                    bias_to_goal_line=planner_bias,
+                                    heuristic_weight=getattr(cfg, 'A_STAR_HEURISTIC_WEIGHT', 2.5)
                                 )
                                 if new_path:
                                     current_path = new_path
@@ -2322,7 +2323,8 @@ def main():
                                 # --- FAZ 0: BLIND GPS FALLBACK (CRITICAL FIX) ---
                                 # If A* fails but we have a valid GPS target, just GO!
                                 blind_drive_dur = getattr(cfg, 'BLIND_DRIVE_SECONDS', 3.0)
-                                if wait_duration < blind_drive_dur and gps_angle is not None and center_d > 1.5:
+                                blind_safe_dist = getattr(cfg, 'BLIND_DRIVE_SAFE_DIST', 0.7)
+                                if wait_duration < blind_drive_dur and gps_angle is not None and center_d > blind_safe_dist:
                                     print(f"{Back.RED}[FAILSAFE] BLIND GPS DRIVE (Err: {gps_angle:.1f}){Style.RESET_ALL}")
 
                                     # Simple P-Control

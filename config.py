@@ -81,8 +81,15 @@ else:
     # Task 3 için Ekstra Hız (Base PWM üzerine eklenir)
     T3_SPEED_PWM = 100
      # FAILSAFE SETTINGS
-    MAP_DECAY_AMOUNT = 2
+    MAP_DECAY_AMOUNT = 5
     BLIND_DRIVE_SECONDS = 3.0
+    BLIND_DRIVE_SAFE_DIST = 0.7
+    MAX_TILT_ANGLE = 5.0
+
+    # A* Tuning
+    A_STAR_HEURISTIC_WEIGHT = 3.0
+    LIDAR_FREE_GAIN = 25
+    LIDAR_OCCUPIED_GAIN = 80
 
     # --- YARIŞMA KOORDİNATLARI (RoboBoat 2026) ---
 
