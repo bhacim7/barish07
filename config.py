@@ -91,6 +91,12 @@ else:
     LIDAR_FREE_GAIN = 25
     LIDAR_OCCUPIED_GAIN = 80
 
+    # Hybrid Navigation Logic
+    HYBRID_STEP_DIST = 2.0  # Meters
+    HYBRID_HEADING_THRESHOLD = 30.0 # Degrees
+    TASK2_SEARCH_DIAMETER = 2.0
+    TASK3_SEARCH_DIAMETER = 2.0
+
     # --- YARIŞMA KOORDİNATLARI (RoboBoat 2026) ---
 
     # TASK 1: Evacuation Route (Kanal Geçişi)
