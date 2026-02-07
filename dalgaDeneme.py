@@ -1707,7 +1707,25 @@ def main():
                         if task2_green_verify_count >= 5:
                             print(f"{Fore.GREEN}[TASK2] GREEN MARKER CONFIRMED! -> CIRCLING OBJECT{Style.RESET_ALL}")
                             mevcut_gorev = "TASK2_GREEN_MARKER_FOUND"
-                            task2_search_phase = 0
+
+                            # Smart Start: Calculate the closest phase to the robot's current position relative to the object
+                            # This prevents the robot from stalling if it happens to be near Phase 0 (East)
+                            rel_x = robot_x - task2_search_center_x
+                            rel_y = robot_y - task2_search_center_y
+                            robot_angle_rad = math.atan2(rel_y, rel_x)
+
+                            # Normalize angle to 0..2pi
+                            if robot_angle_rad < 0: robot_angle_rad += 2 * math.pi
+
+                            # Find closest phase (0=0, 1=pi/2, 2=pi, 3=3pi/2)
+                            # Divide by pi/2 and round
+                            closest_phase = int(round(robot_angle_rad / (math.pi / 2.0))) % 4
+
+                            # Start targeting the NEXT phase
+                            task2_search_phase = closest_phase + 1
+
+                            print(f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Closest Phase: {closest_phase} -> Target Phase: {task2_search_phase}")
+
                             task2_search_laps = 0
                             # Reset counter for future use
                             task2_green_verify_count = 0
@@ -1760,8 +1778,8 @@ def main():
                          # Distance Check
                          dist_to_wp = math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2)
 
-                         # Debug Print (Optional, to monitor progress)
-                         # print(f"[TASK2] Circling Phase {task2_search_phase} Dist: {dist_to_wp:.2f}m")
+                         # Debug Print (Required for diagnosis)
+                         print(f"[TASK2] Circling Phase {task2_search_phase} | Center:({task2_search_center_x:.1f}, {task2_search_center_y:.1f}) | Target:({override_target_x:.1f}, {override_target_y:.1f}) | Dist: {dist_to_wp:.2f}m")
 
                          if dist_to_wp < 1.5: # Increased tolerance to 1.5m to avoid stalling
                              print(f"[TASK2] Object Circle Phase {task2_search_phase} Reached (Dist: {dist_to_wp:.2f}m).")
