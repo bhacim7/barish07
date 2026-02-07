@@ -73,6 +73,8 @@ else:
     YOLO_CONFIDENCE = 0.40  # Hava durumuna göre düşürüp artırabilirsin
     CAM_HFOV = 110.0  # ZED 2i Yatay Görüş Açısı (Derece)
 
+    MEVCUT_GOREV = "TASK2_START"
+
     # Sürüş Katsayıları
     KpACI = 2.5  # Sadece A* çalışmazsa devreye giren 'Plan B' için kullanılır.
 
@@ -127,8 +129,4 @@ else:
         '1000Hz': (950, 1050, 6000000),
         '1200Hz': (1140, 1260, 6000000),
     }
-      
-   
-
-    MEVCUT_GOREV = "TASK2_START"
-
+       
