@@ -90,16 +90,16 @@ else:
     T1_GATE_MID_LON = 29.2599320
 
     # Task 1 Navigation Settings
-    SPOT_TURN_THRESHOLD = 40.0  # Degrees
-    SPOT_TURN_PWM = 200
+    SPOT_TURN_THRESHOLD = 15.0  # Degrees
+    SPOT_TURN_PWM = 130
 
     # TASK 2: Debris Clearance (Engel ve Işık Sahası)
     # T2 Başlangıcı (Referans)
-    T2_ZONE_ENTRY_LAT = 40.80916
-    T2_ZONE_ENTRY_LON = 29.261915
+    T2_ZONE_ENTRY_LAT = 40.8091617
+    T2_ZONE_ENTRY_LON = 29.2619491
     # TASK 2 (ADDED)
-    T2_ZONE_MID_LAT = 40.8090576
-    T2_ZONE_MID_LON = 29.2619221
+    T2_ZONE_MID_LAT = 40.809024
+    T2_ZONE_MID_LON = 29.2619161
     # T2 Bitişi (Hedef Burası)
     T2_ZONE_END_LAT = 40.8089552
     T2_ZONE_END_LON = 29.2619292
@@ -126,5 +126,4 @@ else:
     }
 
     # Başlangıç Görevi
-    MEVCUT_GOREV = "TASK3_APPROACH"
-
+    MEVCUT_GOREV = "TASK2_START"
