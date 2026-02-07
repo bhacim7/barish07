@@ -1654,28 +1654,56 @@ def main():
                         task2_search_center_y = robot_y
 
                 elif mevcut_gorev == "TASK2_SEARCH_PATTERN":
-                    # Search for Green Marker (Class ID 4)
+                    # Search for Green Marker (Class ID 4) - REAL TIME DETECTION PRIORITY
                     # 2 Laps (8 phases) around task2_search_center_x,y
 
-                    # 1. Check for Green Marker
-                    found_green = None
-                    if landmarks_memory:
-                         # Filter for GREEN and proximity
-                         for lm in landmarks_memory:
-                             if lm["color"] == "GREEN":
-                                 # Distance check to ensure it's the one we are looking for (optional)
-                                 found_green = lm
-                                 break
+                    # 1. Check for Green Marker in REAL-TIME (Live Camera)
+                    live_green_found = False
 
-                    if found_green:
-                        print(f"{Fore.GREEN}[TASK2] GREEN MARKER FOUND! -> CIRCLING OBJECT{Style.RESET_ALL}")
-                        mevcut_gorev = "TASK2_GREEN_MARKER_FOUND"
-                        task2_search_center_x = found_green["x"]
-                        task2_search_center_y = found_green["y"]
-                        task2_search_phase = 0
-                        task2_search_laps = 0
+                    if detections:
+                        coords = detections.xyxy.tolist()
+                        cids = detections.class_id.tolist()
 
-                    else:
+                        for i, cid in enumerate(cids):
+                            # ID 4 is Green Marker (Buoy/Object)
+                            # Checking [1, 4, 12] for broader green compatibility if needed, but sticking to 4 as requested.
+                            if cid == 4 or cid in [1, 12]:
+                                x1, y1, x2, y2 = map(int, coords[i])
+                                cx = int((x1 + x2) / 2)
+                                cy = int((y1 + y2) / 2)
+
+                                # Safety clamp
+                                cx = max(0, min(cx, width - 1))
+                                cy = max(0, min(cy, height - 1))
+
+                                err, dist_m = depth.get_value(cx, cy)
+
+                                if not np.isnan(dist_m) and not np.isinf(dist_m) and 0.5 < dist_m < 8.0:
+                                    # Calculate World Position
+                                    hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
+                                    pixel_offset = (cx - (width / 2)) / width
+                                    angle_offset = -pixel_offset * hfov_rad
+                                    obj_global_angle = robot_yaw + angle_offset
+
+                                    obj_wx = robot_x + (dist_m * math.cos(obj_global_angle))
+                                    obj_wy = robot_y + (dist_m * math.sin(obj_global_angle))
+
+                                    # Found it!
+                                    live_green_found = True
+                                    print(f"{Fore.GREEN}[TASK2] GREEN MARKER DETECTED LIVE! Dist: {dist_m:.1f}m{Style.RESET_ALL}")
+
+                                    # Update Memory manually to ensure it persists for the next state
+                                    update_landmark_memory("GREEN", obj_wx, obj_wy)
+
+                                    # Transition
+                                    mevcut_gorev = "TASK2_GREEN_MARKER_FOUND"
+                                    task2_search_center_x = obj_wx
+                                    task2_search_center_y = obj_wy
+                                    task2_search_phase = 0
+                                    task2_search_laps = 0
+                                    break # Stop checking other detections
+
+                    if not live_green_found:
                         # Continue Pattern
                         R = 2.0
                         # 4 points per lap. 2 laps = 8 points.
@@ -1738,165 +1766,120 @@ def main():
                 # ---------------------------------------------------------------------
 
                 # Global Değişkenler
-                if 'task3_breadcrumbs' not in globals():
-                    global task3_breadcrumbs
-                    task3_breadcrumbs = []
+                if 'task3_path_history' not in globals():
+                    global task3_path_history
+                    task3_path_history = []
 
-                if 'task3_turn_direction' not in globals():
-                    global task3_turn_direction
-                    task3_turn_direction = "right"  # Varsayılan: Sağdan
+                if 'task3_turn_dir' not in globals():
+                    global task3_turn_dir
+                    task3_turn_dir = "RIGHT"  # Varsayılan: Sağdan (Kırmızı)
 
-                if 'task3_retry_count' not in globals():
-                    global task3_retry_count
-                    task3_retry_count = 0
-
-                if 'task3_gate_found' not in globals():
-                    global task3_gate_found
-                    task3_gate_found = False
-
-                # ---------------------------------------------------------------------
-                # NEW TASK 3 LOGIC
-                # ---------------------------------------------------------------------
-
+                # AŞAMA 1: KAPI VE IŞIK ARAMA
                 elif mevcut_gorev == "TASK3_APPROACH":
-                    # Backward compatibility for Config default
-                    mevcut_gorev = "TASK3_START"
-
-                elif mevcut_gorev == "TASK3_START":
                     target_lat = cfg.T3_GATE_SEARCH_LAT
                     target_lon = cfg.T3_GATE_SEARCH_LON
 
-                    # Spot Turn Logic utilizes the generic spot turn block in motor control section
-                    # Just setting target is enough for the generic logic to kick in if heading error is large.
+                    # Kapıya yaklaşırken IŞIK ARA (Basit Mantık)
+                    # Hafızadaki 10 metre içindeki "GREEN" veya "RED" objelere bak.
+                    # Eğer bunlar şamandıra değil de "Light" ise (Model sınıfına göre) karar ver.
+                    # Şimdilik: Eğer en yakınımızda Kırmızı/Yeşil bir şey varsa ve çok parlaksa/küçükse o ışıktır.
+                    # Basit kural: Yeşil görürsek SOL, Kırmızı görürsek SAĞ.
 
-                    dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
-                    if dist_to_wp < 2.0:
-                        print(f"{Fore.GREEN}[TASK3] GATE SEARCH REACHED -> GATE APPROACH{Style.RESET_ALL}")
-                        mevcut_gorev = "TASK3_GATE_APPROACH"
-                        task3_gate_found = False
+                    # (Buraya gelişmiş ışık algılama eklenebilir)
 
-                elif mevcut_gorev == "TASK3_GATE_APPROACH":
+                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 5.0:
+                        print(
+                            f"{Fore.YELLOW}[GÖREV] Task 3 Başlıyor -> Dönüş Yönü: {task3_turn_dir}{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK3_ENTER"
+
+                # AŞAMA 2: SARIYA HÜCUM (KAYIT + HIZ)
+                elif mevcut_gorev == "TASK3_ENTER":
                     target_lat = cfg.T3_YELLOW_APPROACH_LAT
                     target_lon = cfg.T3_YELLOW_APPROACH_LON
 
-                    # Move Slowly implies less throttle, can be handled in motor control or by setting a flag.
-                    # For now relying on standard navigation.
-
-                    # Breadcrumbs (every 3m)
-                    if len(task3_breadcrumbs) == 0:
-                        task3_breadcrumbs.append((ida_enlem, ida_boylam))
+                    # Ekmek Kırıntısı Kaydı (Sık aralık: 2m)
+                    if len(task3_path_history) == 0:
+                        task3_path_history.append((ida_enlem, ida_boylam))
                     else:
-                        last_lat, last_lon = task3_breadcrumbs[-1]
-                        if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 3.0:
-                            task3_breadcrumbs.append((ida_enlem, ida_boylam))
+                        last_lat, last_lon = task3_path_history[-1]
+                        if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 2.0:
+                            task3_path_history.append((ida_enlem, ida_boylam))
 
-                    # Visual Logic
-                    red_buoy = None
-                    green_buoy = None
+                    # Sarı Şamandıra Görsel Kontrolü
+                    yellow_buoy = None
                     if landmarks_memory:
-                        for lm in landmarks_memory:
-                            d = math.sqrt((lm["x"] - robot_x)**2 + (lm["y"] - robot_y)**2)
-                            if d < 15.0:
-                                if lm["color"] == "RED": red_buoy = lm
-                                elif lm["color"] == "GREEN": green_buoy = lm
+                        candidates = [lm for lm in landmarks_memory if lm["color"] == "YELLOW"]
+                        if candidates:
+                            candidates.sort(
+                                key=lambda lm: math.sqrt((lm["x"] - robot_x) ** 2 + (lm["y"] - robot_y) ** 2))
+                            yellow_buoy = candidates[0]
 
-                    if red_buoy: task3_turn_direction = "left"
-                    if green_buoy: task3_turn_direction = "right"
+                    if yellow_buoy:
+                        dist = math.sqrt((yellow_buoy["x"] - robot_x) ** 2 + (yellow_buoy["y"] - robot_y) ** 2)
 
-                    if red_buoy and green_buoy:
-                        task3_gate_found = True
+                        # 4 metre kala TUR MODUNA GEÇ
+                        if dist < 4.0:
+                            print(
+                                f"{Fore.CYAN}[GÖREV] Sarıya Varıldı -> {task3_turn_dir} Tarafından Dönülüyor{Style.RESET_ALL}")
 
-                    # Check Arrival
-                    dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
-                    if dist_to_wp < 2.0:
-                        if task3_gate_found:
-                            print(f"{Fore.GREEN}[TASK3] YELLOW APPROACH REACHED (GATE FOUND) -> SEARCH PATTERN{Style.RESET_ALL}")
-                            mevcut_gorev = "TASK3_SEARCH_PATTERN"
-                            task3_search_phase = 0
-                            task3_search_center_x = robot_x
-                            task3_search_center_y = robot_y
-                            task3_search_laps = 0
+                            # Son konumu kaydet
+                            task3_path_history.append((ida_enlem, ida_boylam))
+
+                            mevcut_gorev = "TASK3_CIRCLE"
+                            task3_circle_phase = 0
+                            target_lat = None  # GPS Devre Dışı
+
+                # AŞAMA 3: DÖNÜŞ (HAFIZADAKİ YÖNE GÖRE)
+                elif mevcut_gorev == "TASK3_CIRCLE":
+                    # Sarı şamandırayı al
+                    yellow_buoy = None
+                    if landmarks_memory:
+                        candidates = [lm for lm in landmarks_memory if lm["color"] == "YELLOW"]
+                        if candidates:
+                            candidates.sort(
+                                key=lambda lm: math.sqrt((lm["x"] - robot_x) ** 2 + (lm["y"] - robot_y) ** 2))
+                            yellow_buoy = candidates[0]
+
+                    if yellow_buoy:
+                        bx, by = yellow_buoy["x"], yellow_buoy["y"]
+                        R = 1.0  # Dönüş Yarıçapı
+
+                        # YÖNE GÖRE ROTA BELİRLEME
+                        # task3_turn_dir == "RIGHT" -> SAĞDAN (Saat Yönü Tersi / CCW) -> Sağ, Arka, Sol, Ön
+                        # task3_turn_dir == "LEFT"  -> SOLDAN (Saat Yönü / CW)      -> Sol, Arka, Sağ, Ön
+
+                        offsets = []
+                        if task3_turn_dir == "RIGHT":  # Kırmızı Işık Senaryosu
+                            offsets = [(R, 0), (0, R), (-R, 0), (0, -R)]
+                        else:  # Yeşil Işık Senaryosu
+                            offsets = [(-R, 0), (0, R), (R, 0), (0, -R)]
+
+                        # Şu anki fazın hedefini seç
+                        if task3_circle_phase < 4:
+                            off_x, off_y = offsets[task3_circle_phase]
+                            override_target_x = bx + off_x
+                            override_target_y = by + off_y
+
+                            # Noktaya ulaştık mı?
+                            if math.sqrt((override_target_x - robot_x) ** 2 + (
+                                    override_target_y - robot_y) ** 2) < 1.5:
+                                print(f"[TASK3] Tur Noktası {task3_circle_phase} Tamam.")
+                                task3_circle_phase += 1
                         else:
-                            task3_retry_count += 1
-                            if task3_retry_count < 3:
-                                print(f"{Fore.RED}[TASK3] GATE NOT FOUND (RETRY {task3_retry_count}) -> RESTART{Style.RESET_ALL}")
-                                mevcut_gorev = "TASK3_START"
-                                task3_breadcrumbs = []
-                            else:
-                                print(f"{Fore.RED}[TASK3] GATE NOT FOUND (MAX RETRIES) -> SEARCH PATTERN{Style.RESET_ALL}")
-                                mevcut_gorev = "TASK3_SEARCH_PATTERN"
-                                task3_search_phase = 0
-                                task3_search_center_x = robot_x
-                                task3_search_center_y = robot_y
-                                task3_search_laps = 0
+                            print(f"{Fore.GREEN}[GÖREV] Tur Bitti -> KAÇIŞ BAŞLIYOR{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK3_RETURN"
 
-                elif mevcut_gorev == "TASK3_SEARCH_PATTERN":
-                    # Circular search (2m radius, 2 laps)
-                    yellow_obj = None
-                    if landmarks_memory:
-                         for lm in landmarks_memory:
-                             if lm["color"] == "YELLOW":
-                                 yellow_obj = lm
-                                 break
-
-                    if yellow_obj:
-                         print(f"{Fore.GREEN}[TASK3] YELLOW OBJECT FOUND -> CIRCLING{Style.RESET_ALL}")
-                         mevcut_gorev = "TASK3_YELLOW_FOUND"
-                         task3_yellow_obj_x = yellow_obj["x"]
-                         task3_yellow_obj_y = yellow_obj["y"]
-                         task3_circle_phase = 0
+                # AŞAMA 4: GERİ KAÇIŞ (RETROGRADE)
+                elif mevcut_gorev == "TASK3_RETURN":
+                    # Task 2'deki mantığın aynısı: Listeyi tersten oku
+                    if len(task3_path_history) > 0:
+                        target_lat, target_lon = task3_path_history[-1]
+                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 3.0:
+                            task3_path_history.pop()
                     else:
-                         R = 2.0
-                         phases_per_lap = 4
-                         total_phases = phases_per_lap * 2
-
-                         if task3_search_phase >= total_phases:
-                              task3_retry_count += 1
-                              if task3_retry_count < 3:
-                                   print(f"{Fore.RED}[TASK3] YELLOW NOT FOUND (RETRY {task3_retry_count}) -> RESTART{Style.RESET_ALL}")
-                                   mevcut_gorev = "TASK3_START"
-                                   task3_breadcrumbs = []
-                              else:
-                                   print(f"{Fore.RED}[TASK3] YELLOW NOT FOUND (MAX RETRIES) -> RETURN HOME{Style.RESET_ALL}")
-                                   mevcut_gorev = "TASK3_RETURN_HOME"
-                         else:
-                              phase_mod = task3_search_phase % phases_per_lap
-                              angle_rad = phase_mod * (math.pi / 2.0)
-                              override_target_x = task3_search_center_x + (R * math.cos(angle_rad))
-                              override_target_y = task3_search_center_y + (R * math.sin(angle_rad))
-
-                              if math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2) < 1.0:
-                                   task3_search_phase += 1
-
-                elif mevcut_gorev == "TASK3_YELLOW_FOUND":
-                     # Circle 1 lap (4 phases)
-                     R = 2.0
-                     if task3_circle_phase >= 4:
-                          print(f"{Fore.GREEN}[TASK3] CIRCLING COMPLETE -> RETURN HOME{Style.RESET_ALL}")
-                          mevcut_gorev = "TASK3_RETURN_HOME"
-                     else:
-                          offsets = []
-                          if task3_turn_direction == "right":
-                               offsets = [(R, 0), (0, R), (-R, 0), (0, -R)]
-                          else:
-                               offsets = [(R, 0), (0, -R), (-R, 0), (0, R)]
-
-                          off_x, off_y = offsets[task3_circle_phase]
-                          override_target_x = task3_yellow_obj_x + off_x
-                          override_target_y = task3_yellow_obj_y + off_y
-
-                          if math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2) < 1.0:
-                               task3_circle_phase += 1
-
-                elif mevcut_gorev == "TASK3_RETURN_HOME":
-                     # Reverse breadcrumbs
-                     if len(task3_breadcrumbs) > 0:
-                          target_lat, target_lon = task3_breadcrumbs[-1]
-                          if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
-                               task3_breadcrumbs.pop()
-                     else:
-                          print(f"{Fore.GREEN}[TASK3] HOME REACHED -> DONE{Style.RESET_ALL}")
-                          mevcut_gorev = "TASK5_APPROACH"
+                        print(
+                            f"{Fore.GREEN}[GÖREV] TASK 3 TAMAMLANDI -> DOCKING (TASK 5) BAŞLIYOR{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK5_APPROACH"
 
                 # TASK 5: DOCKING (SAĞ/SOL BOŞLUK TARAMALI)
                 # ---------------------------------------------------------------------
@@ -2010,7 +1993,7 @@ def main():
                         # 1. HARİTAYI AL
                         # Task 2 dönerken Yeşili, Task 3 dönerken Sarıyı yoksay
                         ignore_green_buoys = (mevcut_gorev == "TASK2_GREEN_MARKER_FOUND")
-                        ignore_yellow_buoys = (mevcut_gorev in ["TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"])
+                        ignore_yellow_buoys = (mevcut_gorev == "TASK3_CIRCLE")
 
                         nav_map, inflated_mask = get_inflated_nav_map(costmap_img,
                                                                       ignore_green=ignore_green_buoys,
@@ -2021,7 +2004,7 @@ def main():
 
                         # DURUM A: Manuel Override (Task 2 veya Task 3 Circling)
                         if (
-                                mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"]) and 'override_target_x' in locals():
+                                mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_CIRCLE"]) and 'override_target_x' in locals():
                             tx_world = override_target_x
                             ty_world = override_target_y
 
@@ -2151,33 +2134,8 @@ def main():
                                     controller.set_servo(cfg.SAG_MOTOR, int(FWD - rot))
 
                             # --- TASK 1 & TASK 2 START CUSTOM CONTROL (Heading/Spot Turn) ---
-                            # 1. Hizalama Gerektiren Durum Analizi
-                            should_force_alignment = False
-
-                            # A) Daima Hizalama Yapanlar (A* Kullanmaz, Sadece Heading/Pusula Sürüşü)
-                            # TASK2_START burada kalsın ki start noktasındaki stabil davranışı korusun.
-                            if mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT",
-                                                "TASK2_START", "TASK3_START"]:
-                                should_force_alignment = True
-
-                            # B) HİBRİT MOD (Önce Dön, Sonra A* Kullan) - Sizin istediğiniz kısım burası
-                            # TASK2 Mid ve End aşamalarında, eğer kafa çok dönükse önce düzeltecek.
-                            elif mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END"]:
-                                threshold = getattr(cfg, 'SPOT_TURN_THRESHOLD', 40.0)
-                                # Eğer açı farkı eşikten büyükse A*'ı bekleme, önce dön.
-                                if abs(aci_farki) > threshold:
-                                    should_force_alignment = True
-                                else:
-                                    # Açı düzeldi, artık A* (current_path) bloğuna düşebiliriz.
-                                    should_force_alignment = False
-
-                            # -------------------------------------------------------------------------
-                            # BLOĞU UYGULA
-                            # -------------------------------------------------------------------------
-
-                            # DURUM 1: Zorla Hizalama (Spot Turn & Heading Hold)
-                            if should_force_alignment:
-                                # 1. Vision Scan ve Bearing Hesabı (Mevcut kodunuzdaki gibi)
+                            elif mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT", "TASK2_START"]:
+                                # 1. Vision Scan (Re-parse detections for Red/Green Pair) - ONLY FOR TASK 1
                                 visual_bearing = None
                                 best_red = None
                                 best_green = None
