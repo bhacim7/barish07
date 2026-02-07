@@ -513,6 +513,24 @@ def setup_lidar():
         print(f"!!! LIDAR'a bağlanılamadı: {e}", file=sys.stderr)
         return False  # Başarısız
 
+def get_short_term_waypoint(current_path, robot_x, robot_y, step_dist=2.0):
+    """
+    Verilen yoldan yaklaşık 'step_dist' kadar uzaktaki noktayı seçer.
+    """
+    if not current_path: return None
+
+    # Yoldaki noktalara bak
+    for pt in current_path:
+        dist = math.sqrt((pt[0] - robot_x) ** 2 + (pt[1] - robot_y) ** 2)
+        if dist >= step_dist:
+            return pt
+
+    # Eğer tüm noktalar 2 metreden yakınsa (hedefe yaklaştık), son noktayı ver
+    if len(current_path) > 0:
+        return current_path[-1]
+    return None
+
+
 def select_mission_target(robot_x, robot_y, landmarks, robot_yaw, nav_map=None, gps_target_angle_err=None):
     """
     VISON MANTIĞI ENTEGRELİ GPS SÜRÜŞÜ
@@ -966,6 +984,9 @@ def main():
     current_path = []  # Hesaplanan rota burada tutulacak
     plan_timer = 0  # A* algoritmasını yavaşlatmak için sayaç
     prev_heading_error = 0.0
+
+    # Hybrid Navigation State
+    active_short_term_wp = None
 
     try:
         while True:
@@ -1701,7 +1722,7 @@ def main():
 
                                     found_green_live = True
                                     # Plot on map (update its position)
-                                    update_landmark_memory("GREEN", found_green_x, found_green_y)
+                                    # update_landmark_memory("GREEN", found_green_x, found_green_y) # Constraint: Landmark Memory should NOT be used in this search
                                     break
 
                     if found_green_live:
@@ -1826,6 +1847,14 @@ def main():
                     global task3_gate_found
                     task3_gate_found = False
 
+                if 'task3_gate_passed' not in globals():
+                    global task3_gate_passed
+                    task3_gate_passed = False
+
+                if 'task3_is_retry' not in globals():
+                    global task3_is_retry
+                    task3_is_retry = False
+
                 # ---------------------------------------------------------------------
                 # NEW TASK 3 LOGIC
                 # ---------------------------------------------------------------------
@@ -1838,9 +1867,12 @@ def main():
                     target_lat = cfg.T3_GATE_SEARCH_LAT
                     target_lon = cfg.T3_GATE_SEARCH_LON
 
-                    # Spot Turn Logic utilizes the generic spot turn block in motor control section
-                    # Just setting target is enough for the generic logic to kick in if heading error is large.
+                    # Reset Flags
+                    task3_gate_passed = False
+                    task3_is_retry = False
+                    task3_turn_direction = "right" # Default
 
+                    # Spot Turn Logic utilizes the generic spot turn block in motor control section
                     dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
                     if dist_to_wp < 2.0:
                         print(f"{Fore.GREEN}[TASK3] GATE SEARCH REACHED -> GATE APPROACH{Style.RESET_ALL}")
@@ -1851,9 +1883,6 @@ def main():
                     target_lat = cfg.T3_YELLOW_APPROACH_LAT
                     target_lon = cfg.T3_YELLOW_APPROACH_LON
 
-                    # Move Slowly implies less throttle, can be handled in motor control or by setting a flag.
-                    # For now relying on standard navigation.
-
                     # Breadcrumbs (every 3m)
                     if len(task3_breadcrumbs) == 0:
                         task3_breadcrumbs.append((ida_enlem, ida_boylam))
@@ -1862,45 +1891,47 @@ def main():
                         if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 3.0:
                             task3_breadcrumbs.append((ida_enlem, ida_boylam))
 
-                    # Visual Logic
-                    red_buoy = None
-                    green_buoy = None
-                    if landmarks_memory:
-                        for lm in landmarks_memory:
-                            d = math.sqrt((lm["x"] - robot_x)**2 + (lm["y"] - robot_y)**2)
-                            if d < 15.0:
-                                if lm["color"] == "RED": red_buoy = lm
-                                elif lm["color"] == "GREEN": green_buoy = lm
+                    # 1. Real-time Detection Logic (Simultaneous Control)
+                    if detections:
+                        cids = detections.class_id.tolist()
+                        # Red: [0,3,5], Green: [1,4,12]
+                        has_red = any(c in [0, 3, 5] for c in cids)
+                        has_green = any(c in [1, 4, 12] for c in cids)
 
-                    if red_buoy: task3_turn_direction = "left"
-                    if green_buoy: task3_turn_direction = "right"
+                        # Turn Direction Decision
+                        if has_red: task3_turn_direction = "left"
+                        if has_green: task3_turn_direction = "right"
 
-                    if red_buoy and green_buoy:
-                        task3_gate_found = True
+                        # Gate Check (Simultaneous in frame)
+                        if has_red and has_green:
+                            task3_gate_passed = True
+                            # print(f"[TASK3] GATE PASSED (Visual)")
 
-                    # Check Arrival
+                    # 2. Map Check (Fallback)
+                    if not task3_gate_passed and landmarks_memory:
+                        # Check if we have both red and green nearby (< 8.0m)
+                        r = next((lm for lm in landmarks_memory if lm["color"] == "RED" and
+                                  math.sqrt((lm["x"] - robot_x) ** 2 + (lm["y"] - robot_y) ** 2) < 8.0), None)
+                        g = next((lm for lm in landmarks_memory if lm["color"] == "GREEN" and
+                                  math.sqrt((lm["x"] - robot_x) ** 2 + (lm["y"] - robot_y) ** 2) < 8.0), None)
+                        if r and g:
+                            task3_gate_passed = True
+                            # print(f"[TASK3] GATE PASSED (Map)")
+
+                    # 3. Check Arrival
                     dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
                     if dist_to_wp < 2.0:
-                        if task3_gate_found:
-                            print(f"{Fore.GREEN}[TASK3] YELLOW APPROACH REACHED (GATE FOUND) -> SEARCH PATTERN{Style.RESET_ALL}")
+                        if task3_gate_passed:
+                            print(f"{Fore.GREEN}[TASK3] YELLOW APPROACH REACHED (GATE PASSED) -> SEARCH PATTERN{Style.RESET_ALL}")
                             mevcut_gorev = "TASK3_SEARCH_PATTERN"
                             task3_search_phase = 0
                             task3_search_center_x = robot_x
                             task3_search_center_y = robot_y
                             task3_search_laps = 0
                         else:
-                            task3_retry_count += 1
-                            if task3_retry_count < 3:
-                                print(f"{Fore.RED}[TASK3] GATE NOT FOUND (RETRY {task3_retry_count}) -> RESTART{Style.RESET_ALL}")
-                                mevcut_gorev = "TASK3_START"
-                                task3_breadcrumbs = []
-                            else:
-                                print(f"{Fore.RED}[TASK3] GATE NOT FOUND (MAX RETRIES) -> SEARCH PATTERN{Style.RESET_ALL}")
-                                mevcut_gorev = "TASK3_SEARCH_PATTERN"
-                                task3_search_phase = 0
-                                task3_search_center_x = robot_x
-                                task3_search_center_y = robot_y
-                                task3_search_laps = 0
+                            print(f"{Fore.RED}[TASK3] GATE FAILED -> RETURNING HOME FOR RETRY{Style.RESET_ALL}")
+                            task3_is_retry = True
+                            mevcut_gorev = "TASK3_RETURN_HOME"
 
                 elif mevcut_gorev == "TASK3_SEARCH_PATTERN":
                     # Circular search (2m radius, 2 laps)
@@ -1923,14 +1954,9 @@ def main():
                          total_phases = phases_per_lap * 2
 
                          if task3_search_phase >= total_phases:
-                              task3_retry_count += 1
-                              if task3_retry_count < 3:
-                                   print(f"{Fore.RED}[TASK3] YELLOW NOT FOUND (RETRY {task3_retry_count}) -> RESTART{Style.RESET_ALL}")
-                                   mevcut_gorev = "TASK3_START"
-                                   task3_breadcrumbs = []
-                              else:
-                                   print(f"{Fore.RED}[TASK3] YELLOW NOT FOUND (MAX RETRIES) -> RETURN HOME{Style.RESET_ALL}")
-                                   mevcut_gorev = "TASK3_RETURN_HOME"
+                              print(f"{Fore.RED}[TASK3] YELLOW NOT FOUND -> RETURNING HOME FOR RETRY{Style.RESET_ALL}")
+                              task3_is_retry = True
+                              mevcut_gorev = "TASK3_RETURN_HOME"
                          else:
                               phase_mod = task3_search_phase % phases_per_lap
                               angle_rad = phase_mod * (math.pi / 2.0)
@@ -1945,12 +1971,14 @@ def main():
                      R = 2.0
                      if task3_circle_phase >= 4:
                           print(f"{Fore.GREEN}[TASK3] CIRCLING COMPLETE -> RETURN HOME{Style.RESET_ALL}")
+                          task3_is_retry = False # Success
                           mevcut_gorev = "TASK3_RETURN_HOME"
                      else:
                           offsets = []
                           if task3_turn_direction == "right":
                                offsets = [(R, 0), (0, R), (-R, 0), (0, -R)]
                           else:
+                               # Turn LEFT (Clockwise or Counter? Assuming symmetric)
                                offsets = [(R, 0), (0, -R), (-R, 0), (0, R)]
 
                           off_x, off_y = offsets[task3_circle_phase]
@@ -1967,8 +1995,19 @@ def main():
                           if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
                                task3_breadcrumbs.pop()
                      else:
-                          print(f"{Fore.GREEN}[TASK3] HOME REACHED -> DONE{Style.RESET_ALL}")
-                          mevcut_gorev = "TASK5_APPROACH"
+                          # Reached HOME
+                          if task3_is_retry:
+                               task3_retry_count += 1
+                               if task3_retry_count < 3:
+                                   print(f"{Fore.YELLOW}[TASK3] RETRY {task3_retry_count}/3 -> RESTARTING{Style.RESET_ALL}")
+                                   mevcut_gorev = "TASK3_START"
+                                   task3_breadcrumbs = [] # Clear for new run
+                               else:
+                                   print(f"{Fore.RED}[TASK3] MAX RETRIES -> ABORTING{Style.RESET_ALL}")
+                                   mevcut_gorev = "TASK5_APPROACH"
+                          else:
+                               print(f"{Fore.GREEN}[TASK3] TASK COMPLETE -> NEXT TASK (TASK5){Style.RESET_ALL}")
+                               mevcut_gorev = "TASK5_APPROACH"
 
                 # TASK 5: DOCKING (SAĞ/SOL BOŞLUK TARAMALI)
                 # ---------------------------------------------------------------------
@@ -2105,26 +2144,69 @@ def main():
                                 gps_target_angle_err=gps_angle
                             )
 
-                        # 3. A* ROTA PLANLAMA
-                        plan_timer += 1
-                        if plan_timer > 4:
-                            plan_timer = 0
-                            if tx_world is not None:
-                                # Determine Bias based on Task 2 Requirements
-                                planner_bias = 0.0
-                                if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_HOME"]:
-                                    planner_bias = 0.5  # High penalty for deviating from the straight line
+                        # 3. A* ROTA PLANLAMA & HYBRID NAVIGASYON
+                        # -----------------------------------------------------------------
 
-                                new_path = planner.get_path_plan(
+                        # Hybrid Mode Tasks (Task 2 ve Task 3)
+                        is_hybrid_mode = mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK3_GATE_APPROACH",
+                                                          "TASK3_YELLOW_APPROACH"]
+
+                        if is_hybrid_mode:
+                            # Yeni bir ara hedef (short-term waypoint) gerekiyor mu?
+                            need_new_wp = False
+                            if active_short_term_wp is None:
+                                need_new_wp = True
+                            else:
+                                # Mevcut ara hedefe ulaştık mı? (< 0.5m)
+                                d_wp = math.sqrt(
+                                    (active_short_term_wp[0] - robot_x) ** 2 + (active_short_term_wp[1] - robot_y) ** 2)
+                                if d_wp < 0.8:  # 0.8m tolerans (biraz gevşettik)
+                                    need_new_wp = True
+
+                            if need_new_wp and tx_world is not None:
+                                # 1. Hedefe tam yol planla
+                                # Not: Hybrid modda Bias kullanmıyoruz, çünkü kısa adımlarla gidiyoruz.
+                                full_path = planner.get_path_plan(
                                     (robot_x, robot_y), (tx_world, ty_world), nav_map,
                                     costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX,
-                                    bias_to_goal_line=planner_bias,
+                                    bias_to_goal_line=0.0,
                                     heuristic_weight=getattr(cfg, 'A_STAR_HEURISTIC_WEIGHT', 2.5)
                                 )
-                                if new_path:
-                                    current_path = new_path
+
+                                if full_path:
+                                    # 2. Yoldan 2 metre ötedeki noktayı seç
+                                    active_short_term_wp = get_short_term_waypoint(full_path, robot_x, robot_y,
+                                                                                   step_dist=2.0)
+                                    # 3. Pure Pursuit için sadece bu segmenti ver
+                                    if active_short_term_wp:
+                                        current_path = [(robot_x, robot_y), active_short_term_wp]
+                                        print(f"[HYBRID] New Step: ({active_short_term_wp[0]:.1f}, {active_short_term_wp[1]:.1f})")
                                 else:
+                                    active_short_term_wp = None
                                     current_path = None
+                        else:
+                            # STANDART SÜREKLİ A* (Diğer görevler için)
+                            active_short_term_wp = None  # Hybrid modu resetle
+
+                            plan_timer += 1
+                            if plan_timer > 4:
+                                plan_timer = 0
+                                if tx_world is not None:
+                                    # Determine Bias based on Task 2 Requirements
+                                    planner_bias = 0.0
+                                    if mevcut_gorev in ["TASK2_RETURN_HOME"]:
+                                        planner_bias = 0.5
+
+                                    new_path = planner.get_path_plan(
+                                        (robot_x, robot_y), (tx_world, ty_world), nav_map,
+                                        costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX,
+                                        bias_to_goal_line=planner_bias,
+                                        heuristic_weight=getattr(cfg, 'A_STAR_HEURISTIC_WEIGHT', 2.5)
+                                    )
+                                    if new_path:
+                                        current_path = new_path
+                                    else:
+                                        current_path = None
 
                         # 3. SÜRÜŞ KARARI (PLAN A vs PLAN B)
                         if mission_started and not manual_mode:
@@ -2329,22 +2411,57 @@ def main():
 
                                 path_lost_time = None
 
-                                # HIZ AYARI: Task 3'te ("ENTER" veya "RETURN" aşamalarında) daha hızlı git
-                                current_base_pwm = cfg.BASE_PWM
-                                if mevcut_gorev in ["TASK3_ENTER", "TASK3_RETURN"]:
-                                    current_base_pwm += getattr(cfg, "T3_SPEED_PWM", 100)
+                                # HYBRID MODE HEADING CORRECTION (Düzeltme)
+                                # Eğer Hybrid moddaysak ve açımız hedef ara noktaya göre çok bozuksa
+                                # önce olduğu yerde dön (Spot Turn), sonra ilerle.
+                                force_spot_turn = False
+                                raw_target = None
 
-                                # Get current speed for Dynamic Pure Pursuit
-                                cur_spd = controller.get_horizontal_speed()
-                                if cur_spd is None: cur_spd = 0.0
+                                if is_hybrid_mode and active_short_term_wp:
+                                    # Hedef açı
+                                    desired_heading = math.degrees(
+                                        math.atan2(active_short_term_wp[1] - robot_y, active_short_term_wp[0] - robot_x))
+                                    # Hata
+                                    hybrid_heading_err = nav.signed_angle_difference(magnetic_heading, desired_heading)
 
-                                pp_sol, pp_sag, raw_target, current_error = planner.pure_pursuit_control(
-                                    robot_x, robot_y, robot_yaw, current_path,
-                                    current_speed=cur_spd,
-                                    base_speed=current_base_pwm,
-                                    prev_error=prev_heading_error
-                                )
-                                prev_heading_error = current_error
+                                    # Config'den eşik değeri al (Varsayılan 25 derece)
+                                    if abs(hybrid_heading_err) > getattr(cfg, 'SPOT_TURN_THRESHOLD', 25.0):
+                                        force_spot_turn = True
+                                        # Spot Turn Uygula
+                                        spot_pwm = getattr(cfg, 'SPOT_TURN_PWM', 200)
+                                        if hybrid_heading_err > 0:  # Target Right
+                                            controller.set_servo(cfg.SOL_MOTOR, 1500 + spot_pwm)
+                                            controller.set_servo(cfg.SAG_MOTOR, 1500 - spot_pwm)
+                                        else:  # Target Left
+                                            controller.set_servo(cfg.SOL_MOTOR, 1500 - spot_pwm)
+                                            controller.set_servo(cfg.SAG_MOTOR, 1500 + spot_pwm)
+
+                                if force_spot_turn:
+                                    pass # Pure Pursuit'i atla (Motor komutları yukarıda verildi)
+                                else:
+                                    # NORMAL PURE PURSUIT (İlerle)
+
+                                    # HIZ AYARI: Task 3'te ("ENTER" veya "RETURN" aşamalarında) daha hızlı git
+                                    current_base_pwm = cfg.BASE_PWM
+                                    if mevcut_gorev in ["TASK3_ENTER", "TASK3_RETURN"]:
+                                        current_base_pwm += getattr(cfg, "T3_SPEED_PWM", 100)
+
+                                    # Get current speed for Dynamic Pure Pursuit
+                                    cur_spd = controller.get_horizontal_speed()
+                                    if cur_spd is None: cur_spd = 0.0
+
+                                    pp_sol, pp_sag, raw_target, current_error = planner.pure_pursuit_control(
+                                        robot_x, robot_y, robot_yaw, current_path,
+                                        current_speed=cur_spd,
+                                        base_speed=current_base_pwm,
+                                        prev_error=prev_heading_error
+                                    )
+                                    prev_heading_error = current_error
+
+                                    controller.set_servo(cfg.SOL_MOTOR, pp_sol)
+                                    controller.set_servo(cfg.SAG_MOTOR, pp_sag)
+
+                                acil_durum_aktif_mi = False
 
                                 # --- TARGET SMOOTHING (HEDEF YUMUŞATMA) ---
                                 # Hedef aniden zıplamasın, %70 eski hedefi koru.
@@ -2367,9 +2484,6 @@ def main():
                                     prev_pp_target = None
 
 
-                                controller.set_servo(cfg.SOL_MOTOR, pp_sol)
-                                controller.set_servo(cfg.SAG_MOTOR, pp_sag)
-                                acil_durum_aktif_mi = False
 
 
                             # --- PLAN B: AKILLI BEKLEME & MİNİK KAÇIŞ MODU (Yol Bulunamadı!) ---
