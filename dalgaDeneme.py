@@ -136,6 +136,10 @@ costmap_img = None  # Harita resmi burada tutulacak
 costmap_center_m = (0, 0)  # Haritanın tam ortası Dünya'da hangi (X,Y) metresine denk geliyor?
 costmap_ready = False  # Harita hazır mı?
 
+# Hybrid Navigation Globals
+intermediate_target_x = None
+intermediate_target_y = None
+
 
 def mapping_init(start_x=0, start_y=0):
     """
@@ -418,6 +422,69 @@ def process_lidar_sectors(scan_data, max_dist=3.0):
                 left_min_dist = dist_m
 
     return center_blocked, left_min_dist, center_min_dist, right_min_dist
+
+
+def generate_hybrid_target(robot_x, robot_y, robot_yaw, final_lat, final_lon, current_lat, current_lon, lidar_scan, magnetic_heading):
+    """
+    HİBRİT NAVİGASYON: UZUN MENZİL YERİNE KISA ADIMLAR
+    1. Hedefin pusula açısını (Bearing) bul.
+    2. Lidar ile önümüzü (Sektörleri) tara.
+    3. Hedef yönü açıksa -> 2 metre ileriye hedef koy.
+    4. Hedef yönü kapalıysa -> En boş olan yan tarafa 2 metre ileriye hedef koy.
+    """
+    STEP_DIST = 2.0  # 2 Metrelik adımlar
+
+    # 1. Hedef Açısını Bul
+    if final_lat is None or final_lon is None:
+        return None, None
+
+    if magnetic_heading is None:
+        return None, None
+
+    target_bearing = nav.calculate_bearing(current_lat, current_lon, final_lat, final_lon)
+
+    # Robotun burnuna göre hedefin açısı (Relative Bearing)
+    # Örnek: Hedef 90 (Doğu), Biz 0 (Kuzey) -> Fark +90 (Sağımızda)
+    relative_bearing = nav.signed_angle_difference(magnetic_heading, target_bearing)
+
+    # 2. Lidar Analizi (2.5m ileriye bak)
+    center_blocked, left_d, center_d, right_d = process_lidar_sectors(lidar_scan, max_dist=2.5)
+
+    # 3. Karar Mekanizması
+    chosen_angle_deg = 0.0 # Robotun burnuna göre (0 = İleri)
+
+    # Eğer önümüz (Merkez) bloklu DEĞİLSE ve Hedef de kabaca önümüzdeyse (-20..+20)
+    if not center_blocked and abs(relative_bearing) < 20:
+        chosen_angle_deg = 0.0 # Dümdüz git
+
+    # Eğer Hedef SAĞIMIZDA ise ve Sağ taraf açıksa
+    elif relative_bearing > 20 and (right_d > 2.0 or right_d == float('inf')):
+        chosen_angle_deg = 45.0 # Sağa kay
+
+    # Eğer Hedef SOLUMUZDA ise ve Sol taraf açıksa
+    elif relative_bearing < -20 and (left_d > 2.0 or left_d == float('inf')):
+        chosen_angle_deg = -45.0 # Sola kay
+
+    # Eğer Hedefin olduğu taraf KAPALIYSA -> Açık olan diğer tarafa git (Kaçış)
+    else:
+        # Ön kapalıysa en boş tarafı seç
+        if center_blocked:
+            if right_d > left_d:
+                chosen_angle_deg = 45.0
+            else:
+                chosen_angle_deg = -45.0
+        else:
+            # Ön açık ama hedef yanda değil (veya yan kapalı), o zaman öne git
+            chosen_angle_deg = 0.0
+
+    # 4. Koordinat Hesapla (Robot Frame -> World Frame)
+    # Robot Yaw (Radyan) + Seçilen Açı (Radyan)
+    final_angle_rad = robot_yaw + math.radians(chosen_angle_deg)
+
+    tx = robot_x + (STEP_DIST * math.cos(final_angle_rad))
+    ty = robot_y + (STEP_DIST * math.sin(final_angle_rad))
+
+    return tx, ty
 
 
 #  PATH PLANNING YARDIMCI FONKSİYONLARI (YENİ)
@@ -1626,7 +1693,7 @@ def main():
                         mevcut_gorev = "TASK2_GO_TO_MID"
 
                 elif mevcut_gorev == "TASK2_GO_TO_MID":
-                    # 2. T2_ZONE_MID'e git (A* / Pure Pursuit)
+                    # 2. T2_ZONE_MID'e git (HYBRID NAV)
                     target_lat = cfg.T2_ZONE_MID_LAT
                     target_lon = cfg.T2_ZONE_MID_LON
 
@@ -1637,14 +1704,34 @@ def main():
                         last_lat, last_lon = task2_breadcrumbs[-1]
                         if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 3.0:
                              task2_breadcrumbs.append((ida_enlem, ida_boylam))
-                             # print(f"[TASK2] Breadcrumb Added: {len(task2_breadcrumbs)}")
 
                     if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
                         print(f"{Fore.GREEN}[TASK2] MID REACHED -> GO_TO_END{Style.RESET_ALL}")
                         mevcut_gorev = "TASK2_GO_TO_END"
+                        intermediate_target_x = None # Reset for next leg
+                    else:
+                        # --- HYBRID NAVIGATION ---
+                        need_refresh = False
+                        if intermediate_target_x is None:
+                            need_refresh = True
+                        else:
+                            dist_to_inter = math.sqrt((intermediate_target_x - robot_x)**2 + (intermediate_target_y - robot_y)**2)
+                            if dist_to_inter < 0.5:
+                                need_refresh = True
+
+                        if need_refresh:
+                            ix, iy = generate_hybrid_target(robot_x, robot_y, robot_yaw, target_lat, target_lon, ida_enlem, ida_boylam, local_lidar_scan, magnetic_heading)
+                            if ix is not None:
+                                intermediate_target_x = ix
+                                intermediate_target_y = iy
+                                print(f"[HYBRID] New Target: ({ix:.1f}, {iy:.1f})")
+
+                        if intermediate_target_x is not None:
+                            override_target_x = intermediate_target_x
+                            override_target_y = intermediate_target_y
 
                 elif mevcut_gorev == "TASK2_GO_TO_END":
-                    # 3. T2_ZONE_END'e git (A* / Pure Pursuit)
+                    # 3. T2_ZONE_END'e git (HYBRID NAV)
                     target_lat = cfg.T2_ZONE_END_LAT
                     target_lon = cfg.T2_ZONE_END_LON
 
@@ -1653,7 +1740,6 @@ def main():
                          last_lat, last_lon = task2_breadcrumbs[-1]
                          if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 3.0:
                               task2_breadcrumbs.append((ida_enlem, ida_boylam))
-                              # print(f"[TASK2] Breadcrumb Added: {len(task2_breadcrumbs)}")
 
                     if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
                         print(f"{Fore.GREEN}[TASK2] END REACHED -> SEARCH_PATTERN{Style.RESET_ALL}")
@@ -1663,9 +1749,29 @@ def main():
                         task2_search_laps = 0
                         task2_search_center_x = robot_x
                         task2_search_center_y = robot_y
+                    else:
+                        # --- HYBRID NAVIGATION ---
+                        need_refresh = False
+                        if intermediate_target_x is None:
+                            need_refresh = True
+                        else:
+                            dist_to_inter = math.sqrt((intermediate_target_x - robot_x)**2 + (intermediate_target_y - robot_y)**2)
+                            if dist_to_inter < 0.5:
+                                need_refresh = True
+
+                        if need_refresh:
+                            ix, iy = generate_hybrid_target(robot_x, robot_y, robot_yaw, target_lat, target_lon, ida_enlem, ida_boylam, local_lidar_scan, magnetic_heading)
+                            if ix is not None:
+                                intermediate_target_x = ix
+                                intermediate_target_y = iy
+                                print(f"[HYBRID] New Target: ({ix:.1f}, {iy:.1f})")
+
+                        if intermediate_target_x is not None:
+                            override_target_x = intermediate_target_x
+                            override_target_y = intermediate_target_y
 
                 elif mevcut_gorev == "TASK2_SEARCH_PATTERN":
-                    # Search for Green Marker (Class ID 4) - Real-time Detection
+                    # Search for Green Marker (Class ID 4) - Real-time Detection ONLY
                     # 2 Laps (8 phases) around task2_search_center_x,y
 
                     found_green_live = False
@@ -1688,7 +1794,7 @@ def main():
 
                                 err, dist_m = depth.get_value(cx, cy)
 
-                                # Strict Distance Filter: < 5.0m to avoid noise
+                                # Strict Distance Filter: < 5.0m
                                 if not np.isnan(dist_m) and not np.isinf(dist_m) and 0.1 < dist_m < 5.0:
                                     # Calculate world coordinates
                                     hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
@@ -1700,96 +1806,75 @@ def main():
                                     found_green_y = robot_y + (dist_m * math.sin(obj_global_angle))
 
                                     found_green_live = True
-                                    # Plot on map (update its position)
-                                    update_landmark_memory("GREEN", found_green_x, found_green_y)
+                                    # Not Updating Memory Here! Strict Real-Time.
                                     break
 
                     if found_green_live:
                         task2_green_verify_count += 1
-                        print(f"[TASK2] Verify Green: {task2_green_verify_count}/5")
+                        print(f"[TASK2] Verify Green: {task2_green_verify_count}/3")
 
-                        if task2_green_verify_count >= 5:
+                        if task2_green_verify_count >= 3:
                             print(f"{Fore.GREEN}[TASK2] GREEN MARKER CONFIRMED! -> CIRCLING OBJECT{Style.RESET_ALL}")
                             mevcut_gorev = "TASK2_GREEN_MARKER_FOUND"
 
-                            # LOCK COORDINATES ONCE
+                            # LOCK COORDINATES
                             task2_circle_center_x = found_green_x
                             task2_circle_center_y = found_green_y
                             print(f"[TASK2] Locked Center: ({task2_circle_center_x:.1f}, {task2_circle_center_y:.1f})")
 
-                            # Smart Start: Calculate the closest phase relative to the LOCKED center
+                            # Smart Start Calculation (Start phase closest to robot)
                             rel_x = robot_x - task2_circle_center_x
                             rel_y = robot_y - task2_circle_center_y
                             robot_angle_rad = math.atan2(rel_y, rel_x)
-
-                            # Normalize angle to 0..2pi
                             if robot_angle_rad < 0: robot_angle_rad += 2 * math.pi
-
-                            # Find closest phase (0=0, 1=pi/2, 2=pi, 3=3pi/2)
                             closest_phase = int(round(robot_angle_rad / (math.pi / 2.0))) % 4
-
-                            # Start targeting the NEXT phase
                             task2_search_phase = closest_phase + 1
-
-                            print(f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Start Phase: {task2_search_phase}")
 
                             task2_search_laps = 0
                             task2_green_verify_count = 0
                     else:
-                        # Reset if continuity is broken
+                        # Reset counter
                         if task2_green_verify_count > 0:
-                            print(f"[TASK2] Verification Lost! Resetting counter.")
-                        task2_green_verify_count = 0
+                            task2_green_verify_count = 0
 
                         # Continue Pattern
                         R = 2.0
-                        # 4 points per lap. 2 laps = 8 points.
-                        # Phase 0-3: Lap 1, Phase 4-7: Lap 2
-
+                        # 2 laps = 8 phases
                         if task2_search_phase >= 8:
-                            print(f"{Fore.RED}[TASK2] MARKER NOT FOUND (TIMEOUT) -> RETURN HOME{Style.RESET_ALL}")
+                            print(f"{Fore.RED}[TASK2] MARKER NOT FOUND (2 LAPS) -> RETURN HOME{Style.RESET_ALL}")
                             mevcut_gorev = "TASK2_RETURN_HOME"
                         else:
-                            # Calculate target point on circle
-                            # Angles: 0, 90, 180, 270 (deg) -> 0, pi/2, pi, 3pi/2
                             phase_mod = task2_search_phase % 4
                             angle_rad = phase_mod * (math.pi / 2.0)
 
-                            # Target point
                             override_target_x = task2_search_center_x + (R * math.cos(angle_rad))
                             override_target_y = task2_search_center_y + (R * math.sin(angle_rad))
 
-                            # Check arrival
                             dist_to_wp = math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2)
                             if dist_to_wp < 1.0:
-                                print(f"[TASK2] Search Phase {task2_search_phase} Reached.")
                                 task2_search_phase += 1
 
                 elif mevcut_gorev == "TASK2_GREEN_MARKER_FOUND":
-                     # Circle the object (2m radius, 2 laps)
+                     # Circle the object (2m radius, 2 laps = 8 steps)
                      R = 2.0
 
-                     if task2_search_phase >= 8:
-                         print(f"{Fore.GREEN}[TASK2] OBJECT CIRCLED -> RETURN HOME{Style.RESET_ALL}")
+                     # Using task2_search_laps as STEP COUNTER (Target: 8 steps)
+                     if task2_search_laps >= 8:
+                         print(f"{Fore.GREEN}[TASK2] OBJECT CIRCLED (2 LAPS) -> RETURN HOME{Style.RESET_ALL}")
                          mevcut_gorev = "TASK2_RETURN_HOME"
                      else:
-                         # 4 points per lap (0, 90, 180, 270 degrees)
                          phase_mod = task2_search_phase % 4
                          angle_rad = phase_mod * (math.pi / 2.0)
 
-                         # Calculate Target Point (Using LOCKED center)
                          override_target_x = task2_circle_center_x + (R * math.cos(angle_rad))
                          override_target_y = task2_circle_center_y + (R * math.sin(angle_rad))
 
-                         # Distance Check
                          dist_to_wp = math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2)
 
-                         # Debug Print (Required for diagnosis)
-                         print(f"[TASK2] Circling Phase {task2_search_phase} | Center:({task2_circle_center_x:.1f}, {task2_circle_center_y:.1f}) | Target:({override_target_x:.1f}, {override_target_y:.1f}) | Dist: {dist_to_wp:.2f}m")
-
-                         if dist_to_wp < 1.5: # Increased tolerance to 1.5m to avoid stalling
-                             print(f"[TASK2] Object Circle Phase {task2_search_phase} Reached (Dist: {dist_to_wp:.2f}m).")
+                         if dist_to_wp < 1.5:
+                             print(f"[TASK2] Circle Step {task2_search_laps+1}/8 Reached.")
                              task2_search_phase += 1
+                             task2_search_laps += 1
 
                 elif mevcut_gorev == "TASK2_RETURN_HOME":
                     # Retrace breadcrumbs
@@ -1838,21 +1923,19 @@ def main():
                     target_lat = cfg.T3_GATE_SEARCH_LAT
                     target_lon = cfg.T3_GATE_SEARCH_LON
 
-                    # Spot Turn Logic utilizes the generic spot turn block in motor control section
-                    # Just setting target is enough for the generic logic to kick in if heading error is large.
+                    # Use Heading/Bearing Only (Force Alignment Logic handles this in PLANNER block)
 
                     dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
                     if dist_to_wp < 2.0:
                         print(f"{Fore.GREEN}[TASK3] GATE SEARCH REACHED -> GATE APPROACH{Style.RESET_ALL}")
                         mevcut_gorev = "TASK3_GATE_APPROACH"
                         task3_gate_found = False
+                        task3_breadcrumbs = []
+                        intermediate_target_x = None
 
                 elif mevcut_gorev == "TASK3_GATE_APPROACH":
                     target_lat = cfg.T3_YELLOW_APPROACH_LAT
                     target_lon = cfg.T3_YELLOW_APPROACH_LON
-
-                    # Move Slowly implies less throttle, can be handled in motor control or by setting a flag.
-                    # For now relying on standard navigation.
 
                     # Breadcrumbs (every 3m)
                     if len(task3_breadcrumbs) == 0:
@@ -1862,77 +1945,134 @@ def main():
                         if nav.haversine(ida_enlem, ida_boylam, last_lat, last_lon) > 3.0:
                             task3_breadcrumbs.append((ida_enlem, ida_boylam))
 
-                    # Visual Logic
-                    red_buoy = None
-                    green_buoy = None
+                    # --- Gate Check Logic ---
+                    # 1. Condition B: Visual (Red + Green)
+                    vis_red = False
+                    vis_green = False
+                    if detections:
+                        cids = detections.class_id.tolist()
+                        if (0 in cids or 3 in cids or 5 in cids): vis_red = True
+                        if (1 in cids or 4 in cids or 12 in cids): vis_green = True
+
+                        # Turn Direction Update
+                        if 3 in cids: task3_turn_direction = "left"
+                        elif 4 in cids: task3_turn_direction = "right"
+
+                    if vis_red and vis_green:
+                        task3_gate_found = True
+                        print("[TASK3] Visual Gate Detected (Red+Green)!")
+
+                    # 2. Condition A: Landmarks Memory (Between Red/Green)
+                    # Simplified: If we have seen both recently
+                    has_red_mem = False
+                    has_green_mem = False
                     if landmarks_memory:
                         for lm in landmarks_memory:
-                            d = math.sqrt((lm["x"] - robot_x)**2 + (lm["y"] - robot_y)**2)
-                            if d < 15.0:
-                                if lm["color"] == "RED": red_buoy = lm
-                                elif lm["color"] == "GREEN": green_buoy = lm
+                            if lm["color"] == "RED": has_red_mem = True
+                            elif lm["color"] == "GREEN": has_green_mem = True
 
-                    if red_buoy: task3_turn_direction = "left"
-                    if green_buoy: task3_turn_direction = "right"
-
-                    if red_buoy and green_buoy:
+                    if has_red_mem and has_green_mem:
                         task3_gate_found = True
 
-                    # Check Arrival
-                    dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
-                    if dist_to_wp < 2.0:
+                    # Arrival Check
+                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
                         if task3_gate_found:
-                            print(f"{Fore.GREEN}[TASK3] YELLOW APPROACH REACHED (GATE FOUND) -> SEARCH PATTERN{Style.RESET_ALL}")
+                            print(f"{Fore.GREEN}[TASK3] GATE PASSED -> SEARCH PATTERN{Style.RESET_ALL}")
                             mevcut_gorev = "TASK3_SEARCH_PATTERN"
                             task3_search_phase = 0
+                            task3_search_laps = 0
                             task3_search_center_x = robot_x
                             task3_search_center_y = robot_y
-                            task3_search_laps = 0
                         else:
-                            task3_retry_count += 1
-                            if task3_retry_count < 3:
-                                print(f"{Fore.RED}[TASK3] GATE NOT FOUND (RETRY {task3_retry_count}) -> RESTART{Style.RESET_ALL}")
-                                mevcut_gorev = "TASK3_START"
-                                task3_breadcrumbs = []
-                            else:
-                                print(f"{Fore.RED}[TASK3] GATE NOT FOUND (MAX RETRIES) -> SEARCH PATTERN{Style.RESET_ALL}")
-                                mevcut_gorev = "TASK3_SEARCH_PATTERN"
-                                task3_search_phase = 0
-                                task3_search_center_x = robot_x
-                                task3_search_center_y = robot_y
-                                task3_search_laps = 0
+                            print(f"{Fore.RED}[TASK3] GATE CHECK FAILED -> RETRY RETRACE{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK3_RETRY_RETRACE"
+                    else:
+                        # --- HYBRID NAVIGATION ---
+                        need_refresh = False
+                        if intermediate_target_x is None:
+                            need_refresh = True
+                        else:
+                            dist_to_inter = math.sqrt((intermediate_target_x - robot_x)**2 + (intermediate_target_y - robot_y)**2)
+                            if dist_to_inter < 0.5:
+                                need_refresh = True
+
+                        if need_refresh:
+                            ix, iy = generate_hybrid_target(robot_x, robot_y, robot_yaw, target_lat, target_lon, ida_enlem, ida_boylam, local_lidar_scan, magnetic_heading)
+                            if ix is not None:
+                                intermediate_target_x = ix
+                                intermediate_target_y = iy
+
+                        if intermediate_target_x is not None:
+                            override_target_x = intermediate_target_x
+                            override_target_y = intermediate_target_y
+
+                elif mevcut_gorev == "TASK3_RETRY_RETRACE":
+                    # Retrace breadcrumbs back to Start
+                    if len(task3_breadcrumbs) > 0:
+                        target_lat, target_lon = task3_breadcrumbs[-1]
+                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                            task3_breadcrumbs.pop()
+                    else:
+                        # Reached Start
+                        task3_retry_count += 1
+                        if task3_retry_count < 3:
+                            print(f"{Fore.YELLOW}[TASK3] RETRY {task3_retry_count}/3 -> RESTART APPROACH{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK3_GATE_APPROACH"
+                            task3_breadcrumbs = []
+                            intermediate_target_x = None
+                        else:
+                            print(f"{Fore.RED}[TASK3] MAX RETRIES (GATE) -> ABORTING TASK{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK5_APPROACH"
 
                 elif mevcut_gorev == "TASK3_SEARCH_PATTERN":
-                    # Circular search (2m radius, 2 laps)
-                    yellow_obj = None
-                    if landmarks_memory:
-                         for lm in landmarks_memory:
-                             if lm["color"] == "YELLOW":
-                                 yellow_obj = lm
-                                 break
+                    # Circular search (2m radius, 2 laps) for Yellow Object (ID 9)
 
-                    if yellow_obj:
+                    found_yellow = False
+                    found_yellow_x = 0
+                    found_yellow_y = 0
+
+                    if detections:
+                        cids = detections.class_id.tolist()
+                        coords = detections.xyxy.tolist()
+                        for i, cid in enumerate(cids):
+                            if cid == 9: # Yellow Object
+                                x1, y1, x2, y2 = map(int, coords[i])
+                                cx = int((x1 + x2) / 2)
+                                cy = int((y1 + y2) / 2)
+                                err, dist_m = depth.get_value(cx, cy)
+                                if not np.isnan(dist_m) and not np.isinf(dist_m) and 0.1 < dist_m < 5.0:
+                                    # Calculate World Pos
+                                    hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
+                                    pixel_offset = (cx - (width / 2)) / width
+                                    angle_offset = -pixel_offset * hfov_rad
+                                    obj_global_angle = robot_yaw + angle_offset
+                                    found_yellow_x = robot_x + (dist_m * math.cos(obj_global_angle))
+                                    found_yellow_y = robot_y + (dist_m * math.sin(obj_global_angle))
+                                    found_yellow = True
+                                    break
+
+                    if found_yellow:
                          print(f"{Fore.GREEN}[TASK3] YELLOW OBJECT FOUND -> CIRCLING{Style.RESET_ALL}")
                          mevcut_gorev = "TASK3_YELLOW_FOUND"
-                         task3_yellow_obj_x = yellow_obj["x"]
-                         task3_yellow_obj_y = yellow_obj["y"]
-                         task3_circle_phase = 0
+                         task3_yellow_obj_x = found_yellow_x
+                         task3_yellow_obj_y = found_yellow_y
+                         task3_search_laps = 0 # Will use as step counter (8 steps)
+
+                         # Smart Start
+                         rel_x = robot_x - task3_yellow_obj_x
+                         rel_y = robot_y - task3_yellow_obj_y
+                         robot_angle_rad = math.atan2(rel_y, rel_x)
+                         if robot_angle_rad < 0: robot_angle_rad += 2 * math.pi
+                         closest_phase = int(round(robot_angle_rad / (math.pi / 2.0))) % 4
+                         task3_circle_phase = closest_phase + 1
                     else:
                          R = 2.0
-                         phases_per_lap = 4
-                         total_phases = phases_per_lap * 2
-
-                         if task3_search_phase >= total_phases:
-                              task3_retry_count += 1
-                              if task3_retry_count < 3:
-                                   print(f"{Fore.RED}[TASK3] YELLOW NOT FOUND (RETRY {task3_retry_count}) -> RESTART{Style.RESET_ALL}")
-                                   mevcut_gorev = "TASK3_START"
-                                   task3_breadcrumbs = []
-                              else:
-                                   print(f"{Fore.RED}[TASK3] YELLOW NOT FOUND (MAX RETRIES) -> RETURN HOME{Style.RESET_ALL}")
-                                   mevcut_gorev = "TASK3_RETURN_HOME"
+                         # 2 Laps = 8 phases
+                         if task3_search_phase >= 8:
+                              print(f"{Fore.RED}[TASK3] YELLOW NOT FOUND (2 LAPS) -> RETRACE START{Style.RESET_ALL}")
+                              mevcut_gorev = "TASK3_RETRY_RETRACE" # Trigger retrace logic
                          else:
-                              phase_mod = task3_search_phase % phases_per_lap
+                              phase_mod = task3_search_phase % 4
                               angle_rad = phase_mod * (math.pi / 2.0)
                               override_target_x = task3_search_center_x + (R * math.cos(angle_rad))
                               override_target_y = task3_search_center_y + (R * math.sin(angle_rad))
@@ -1941,24 +2081,34 @@ def main():
                                    task3_search_phase += 1
 
                 elif mevcut_gorev == "TASK3_YELLOW_FOUND":
-                     # Circle 1 lap (4 phases)
+                     # Circle 2 laps (8 steps) in turn_direction
                      R = 2.0
-                     if task3_circle_phase >= 4:
+                     if task3_search_laps >= 8:
                           print(f"{Fore.GREEN}[TASK3] CIRCLING COMPLETE -> RETURN HOME{Style.RESET_ALL}")
                           mevcut_gorev = "TASK3_RETURN_HOME"
                      else:
-                          offsets = []
+                          phase_mod = task3_circle_phase % 4
+                          angle_rad = phase_mod * (math.pi / 2.0)
+
+                          # Adjust for turn direction
+                          # If Left: angles increase (0, 90, 180...) - Counter Clockwise
+                          # If Right: angles decrease? Or we just follow the circle points?
+                          # Standard circle logic above is Counter-Clockwise (increasing angle).
+                          # If we want to turn Right (Clockwise), we should decrease angle or reverse point order.
+
+                          # Simple approach: Standard circle is fine, but "turn_direction" usually means approach side.
+                          # If strictly "turn right around object", it implies clockwise.
+
                           if task3_turn_direction == "right":
-                               offsets = [(R, 0), (0, R), (-R, 0), (0, -R)]
-                          else:
-                               offsets = [(R, 0), (0, -R), (-R, 0), (0, R)]
+                              # Clockwise: 0, -90, -180...
+                              angle_rad = -angle_rad
 
-                          off_x, off_y = offsets[task3_circle_phase]
-                          override_target_x = task3_yellow_obj_x + off_x
-                          override_target_y = task3_yellow_obj_y + off_y
+                          override_target_x = task3_yellow_obj_x + (R * math.cos(angle_rad))
+                          override_target_y = task3_yellow_obj_y + (R * math.sin(angle_rad))
 
-                          if math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2) < 1.0:
+                          if math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2) < 1.5:
                                task3_circle_phase += 1
+                               task3_search_laps += 1
 
                 elif mevcut_gorev == "TASK3_RETURN_HOME":
                      # Reverse breadcrumbs
