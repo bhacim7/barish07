@@ -1609,6 +1609,12 @@ def main():
                     global task2_green_verify_count
                     task2_green_verify_count = 0
 
+                if 'task2_circle_center_x' not in globals():
+                    global task2_circle_center_x
+                    global task2_circle_center_y
+                    task2_circle_center_x = 0
+                    task2_circle_center_y = 0
+
                 if mevcut_gorev == "TASK2_START":
                     # 1. T2_ZONE_ENTRY'ye git (Spot Turn Logic ile)
                     target_lat = cfg.T2_ZONE_ENTRY_LAT
@@ -1659,20 +1665,20 @@ def main():
                         task2_search_center_y = robot_y
 
                 elif mevcut_gorev == "TASK2_SEARCH_PATTERN":
-                    # Search for Green Marker (Class ID 4 or 12) - Real-time Detection
+                    # Search for Green Marker (Class ID 4) - Real-time Detection
                     # 2 Laps (8 phases) around task2_search_center_x,y
 
                     found_green_live = False
-                    green_obj_x = 0
-                    green_obj_y = 0
+                    found_green_x = 0
+                    found_green_y = 0
 
                     if detections:
                         cids = detections.class_id.tolist()
                         coords = detections.xyxy.tolist()
 
                         for i, cid in enumerate(cids):
-                            # Allow both ID 4 (Standard) and 12 (Marker) for robustness
-                            if cid in [4, 12]:
+                            # Strict verification: Only ID 4 (Green Marker) as per request
+                            if cid == 4:
                                 # Calculate position
                                 x1, y1, x2, y2 = map(int, coords[i])
                                 cx = int((x1 + x2) / 2)
@@ -1682,57 +1688,57 @@ def main():
 
                                 err, dist_m = depth.get_value(cx, cy)
 
-                                if not np.isnan(dist_m) and not np.isinf(dist_m) and 0.1 < dist_m < 15.0:
+                                # Strict Distance Filter: < 5.0m to avoid noise
+                                if not np.isnan(dist_m) and not np.isinf(dist_m) and 0.1 < dist_m < 5.0:
                                     # Calculate world coordinates
                                     hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
                                     pixel_offset = (cx - (width / 2)) / width
                                     angle_offset = -pixel_offset * hfov_rad
                                     obj_global_angle = robot_yaw + angle_offset
 
-                                    green_obj_x = robot_x + (dist_m * math.cos(obj_global_angle))
-                                    green_obj_y = robot_y + (dist_m * math.sin(obj_global_angle))
+                                    found_green_x = robot_x + (dist_m * math.cos(obj_global_angle))
+                                    found_green_y = robot_y + (dist_m * math.sin(obj_global_angle))
 
                                     found_green_live = True
                                     # Plot on map (update its position)
-                                    update_landmark_memory("GREEN", green_obj_x, green_obj_y)
-                                    # Keep updating center coordinates to refine position
-                                    task2_search_center_x = green_obj_x
-                                    task2_search_center_y = green_obj_y
+                                    update_landmark_memory("GREEN", found_green_x, found_green_y)
                                     break
 
                     if found_green_live:
                         task2_green_verify_count += 1
-                        print(f"[TASK2] Green Verify: {task2_green_verify_count}/5")
+                        print(f"[TASK2] Verify Green: {task2_green_verify_count}/5")
 
                         if task2_green_verify_count >= 5:
                             print(f"{Fore.GREEN}[TASK2] GREEN MARKER CONFIRMED! -> CIRCLING OBJECT{Style.RESET_ALL}")
                             mevcut_gorev = "TASK2_GREEN_MARKER_FOUND"
 
-                            # Smart Start: Calculate the closest phase to the robot's current position relative to the object
-                            # This prevents the robot from stalling if it happens to be near Phase 0 (East)
-                            rel_x = robot_x - task2_search_center_x
-                            rel_y = robot_y - task2_search_center_y
+                            # LOCK COORDINATES ONCE
+                            task2_circle_center_x = found_green_x
+                            task2_circle_center_y = found_green_y
+                            print(f"[TASK2] Locked Center: ({task2_circle_center_x:.1f}, {task2_circle_center_y:.1f})")
+
+                            # Smart Start: Calculate the closest phase relative to the LOCKED center
+                            rel_x = robot_x - task2_circle_center_x
+                            rel_y = robot_y - task2_circle_center_y
                             robot_angle_rad = math.atan2(rel_y, rel_x)
 
                             # Normalize angle to 0..2pi
                             if robot_angle_rad < 0: robot_angle_rad += 2 * math.pi
 
                             # Find closest phase (0=0, 1=pi/2, 2=pi, 3=3pi/2)
-                            # Divide by pi/2 and round
                             closest_phase = int(round(robot_angle_rad / (math.pi / 2.0))) % 4
 
                             # Start targeting the NEXT phase
                             task2_search_phase = closest_phase + 1
 
-                            print(f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Closest Phase: {closest_phase} -> Target Phase: {task2_search_phase}")
+                            print(f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Start Phase: {task2_search_phase}")
 
                             task2_search_laps = 0
-                            # Reset counter for future use
                             task2_green_verify_count = 0
                     else:
                         # Reset if continuity is broken
                         if task2_green_verify_count > 0:
-                            print(f"[TASK2] Verification Reset (Lost Track)")
+                            print(f"[TASK2] Verification Lost! Resetting counter.")
                         task2_green_verify_count = 0
 
                         # Continue Pattern
@@ -1771,15 +1777,15 @@ def main():
                          phase_mod = task2_search_phase % 4
                          angle_rad = phase_mod * (math.pi / 2.0)
 
-                         # Calculate Target Point
-                         override_target_x = task2_search_center_x + (R * math.cos(angle_rad))
-                         override_target_y = task2_search_center_y + (R * math.sin(angle_rad))
+                         # Calculate Target Point (Using LOCKED center)
+                         override_target_x = task2_circle_center_x + (R * math.cos(angle_rad))
+                         override_target_y = task2_circle_center_y + (R * math.sin(angle_rad))
 
                          # Distance Check
                          dist_to_wp = math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2)
 
                          # Debug Print (Required for diagnosis)
-                         print(f"[TASK2] Circling Phase {task2_search_phase} | Center:({task2_search_center_x:.1f}, {task2_search_center_y:.1f}) | Target:({override_target_x:.1f}, {override_target_y:.1f}) | Dist: {dist_to_wp:.2f}m")
+                         print(f"[TASK2] Circling Phase {task2_search_phase} | Center:({task2_circle_center_x:.1f}, {task2_circle_center_y:.1f}) | Target:({override_target_x:.1f}, {override_target_y:.1f}) | Dist: {dist_to_wp:.2f}m")
 
                          if dist_to_wp < 1.5: # Increased tolerance to 1.5m to avoid stalling
                              print(f"[TASK2] Object Circle Phase {task2_search_phase} Reached (Dist: {dist_to_wp:.2f}m).")
