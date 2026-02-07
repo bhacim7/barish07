@@ -235,7 +235,7 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
     """
     # TUNABLE CONSTANTS
     MIN_L = 1.0  # Min Lookahead (m)
-    MAX_L = 4.0  # Max Lookahead (m)
+    MAX_L = 3.0  # Max Lookahead (m)
     LOOKAHEAD_GAIN = 0.5  # Speed gain for lookahead
     BASE_THROTTLE = 80.0  # Base throttle PWM to add to base_speed
     CURVATURE_GAIN = 8.0  # Gain for speed reduction based on curvature
@@ -268,7 +268,7 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
     # 4. PWM Hesapla (PID Kontrol)
     # Hata: alpha (Radyan cinsinden açı farkı)
 
-    TURN_KP = 250.0  # Oransal (Biraz artırdık)
+    TURN_KP = 200.0  # Oransal (Biraz artırdık)
     TURN_KD = 50.0   # Türev (Titremeyi önler)
 
     # Türev hesabı (Hata değişimi)
