@@ -22,7 +22,7 @@ def reconstruct_path(came_from, current):
     return total_path[::-1]  # Tersten çevir (Başlangıç -> Bitiş)
 
 
-def a_star_search(grid, start, goal, line_bias_weight=0.0):
+def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5):
     """
     grid: 0=Engel, 255=Yol (Küçültülmüş Harita)
     start, goal: (x, y) tuple - Grid koordinatları
@@ -49,7 +49,7 @@ def a_star_search(grid, start, goal, line_bias_weight=0.0):
 
     came_from = {}
     g_score = {start: 0}
-    f_score = {start: heuristic(start, goal)}
+    f_score = {start: heuristic(start, goal, weight=heuristic_weight)}
 
     while open_set:
         # En düşük F skoruna sahip kareyi seç
@@ -82,7 +82,7 @@ def a_star_search(grid, start, goal, line_bias_weight=0.0):
                 if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g_score
-                    f = tentative_g_score + heuristic(neighbor, goal)
+                    f = tentative_g_score + heuristic(neighbor, goal, weight=heuristic_weight)
                     f_score[neighbor] = f
                     heapq.heappush(open_set, (f, neighbor))
 
@@ -142,7 +142,7 @@ def find_nearest_free_point(grid, point, search_radius=5):
                         return (nx, ny)
     return None
 
-def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0):
+def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0, heuristic_weight=2.5):
     """
     Bu fonksiyon ana koddan (deneme.py) çağrılır.
     1. Haritayı küçültür (Downsampling).
@@ -200,7 +200,7 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
             return None
 
     # 3. A* ÇALIŞTIR
-    path_grid = a_star_search(low_res_grid, start_grid, goal_grid, line_bias_weight=bias_to_goal_line)
+    path_grid = a_star_search(low_res_grid, start_grid, goal_grid, line_bias_weight=bias_to_goal_line, heuristic_weight=heuristic_weight)
 
     if path_grid is None: return None
 
