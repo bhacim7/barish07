@@ -2031,9 +2031,15 @@ def main():
                         if plan_timer > 4:
                             plan_timer = 0
                             if tx_world is not None:
+                                # Determine Bias based on Task 2 Requirements
+                                planner_bias = 0.0
+                                if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_HOME"]:
+                                    planner_bias = 0.5  # High penalty for deviating from the straight line
+
                                 new_path = planner.get_path_plan(
                                     (robot_x, robot_y), (tx_world, ty_world), nav_map,
-                                    costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX
+                                    costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX,
+                                    bias_to_goal_line=planner_bias
                                 )
                                 if new_path:
                                     current_path = new_path
