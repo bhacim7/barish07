@@ -2144,8 +2144,33 @@ def main():
                                     controller.set_servo(cfg.SAG_MOTOR, int(FWD - rot))
 
                             # --- TASK 1 & TASK 2 START CUSTOM CONTROL (Heading/Spot Turn) ---
-                            elif mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT", "TASK2_START", "TASK3_START"]:
-                                # 1. Vision Scan (Re-parse detections for Red/Green Pair) - ONLY FOR TASK 1
+                            # 1. Hizalama Gerektiren Durum Analizi
+                            should_force_alignment = False
+
+                            # A) Daima Hizalama Yapanlar (A* Kullanmaz, Sadece Heading/Pusula Sürüşü)
+                            # TASK2_START burada kalsın ki start noktasındaki stabil davranışı korusun.
+                            if mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT",
+                                                "TASK2_START", "TASK3_START"]:
+                                should_force_alignment = True
+
+                            # B) HİBRİT MOD (Önce Dön, Sonra A* Kullan) - Sizin istediğiniz kısım burası
+                            # TASK2 Mid ve End aşamalarında, eğer kafa çok dönükse önce düzeltecek.
+                            elif mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END"]:
+                                threshold = getattr(cfg, 'SPOT_TURN_THRESHOLD', 40.0)
+                                # Eğer açı farkı eşikten büyükse A*'ı bekleme, önce dön.
+                                if abs(aci_farki) > threshold:
+                                    should_force_alignment = True
+                                else:
+                                    # Açı düzeldi, artık A* (current_path) bloğuna düşebiliriz.
+                                    should_force_alignment = False
+
+                            # -------------------------------------------------------------------------
+                            # BLOĞU UYGULA
+                            # -------------------------------------------------------------------------
+
+                            # DURUM 1: Zorla Hizalama (Spot Turn & Heading Hold)
+                            if should_force_alignment:
+                                # 1. Vision Scan ve Bearing Hesabı (Mevcut kodunuzdaki gibi)
                                 visual_bearing = None
                                 best_red = None
                                 best_green = None
