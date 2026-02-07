@@ -1654,24 +1654,48 @@ def main():
                         task2_search_center_y = robot_y
 
                 elif mevcut_gorev == "TASK2_SEARCH_PATTERN":
-                    # Search for Green Marker (Class ID 4)
+                    # Search for Green Marker (Class ID 4) - Real-time Detection
                     # 2 Laps (8 phases) around task2_search_center_x,y
 
-                    # 1. Check for Green Marker
-                    found_green = None
-                    if landmarks_memory:
-                         # Filter for GREEN and proximity
-                         for lm in landmarks_memory:
-                             if lm["color"] == "GREEN":
-                                 # Distance check to ensure it's the one we are looking for (optional)
-                                 found_green = lm
-                                 break
+                    found_green_live = False
+                    green_obj_x = 0
+                    green_obj_y = 0
 
-                    if found_green:
-                        print(f"{Fore.GREEN}[TASK2] GREEN MARKER FOUND! -> CIRCLING OBJECT{Style.RESET_ALL}")
+                    if detections:
+                        cids = detections.class_id.tolist()
+                        coords = detections.xyxy.tolist()
+
+                        for i, cid in enumerate(cids):
+                            if cid == 4:  # Green Marker
+                                # Calculate position
+                                x1, y1, x2, y2 = map(int, coords[i])
+                                cx = int((x1 + x2) / 2)
+                                box_h = y2 - y1
+                                target_cy = int(y2 - (box_h * 0.15))
+                                cy = max(0, min(target_cy, height - 1))
+
+                                err, dist_m = depth.get_value(cx, cy)
+
+                                if not np.isnan(dist_m) and not np.isinf(dist_m) and 0.1 < dist_m < 15.0:
+                                    # Calculate world coordinates
+                                    hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
+                                    pixel_offset = (cx - (width / 2)) / width
+                                    angle_offset = -pixel_offset * hfov_rad
+                                    obj_global_angle = robot_yaw + angle_offset
+
+                                    green_obj_x = robot_x + (dist_m * math.cos(obj_global_angle))
+                                    green_obj_y = robot_y + (dist_m * math.sin(obj_global_angle))
+
+                                    found_green_live = True
+                                    # Plot on map (update its position)
+                                    update_landmark_memory("GREEN", green_obj_x, green_obj_y)
+                                    break
+
+                    if found_green_live:
+                        print(f"{Fore.GREEN}[TASK2] GREEN MARKER DETECTED LIVE! -> CIRCLING OBJECT{Style.RESET_ALL}")
                         mevcut_gorev = "TASK2_GREEN_MARKER_FOUND"
-                        task2_search_center_x = found_green["x"]
-                        task2_search_center_y = found_green["y"]
+                        task2_search_center_x = green_obj_x
+                        task2_search_center_y = green_obj_y
                         task2_search_phase = 0
                         task2_search_laps = 0
 
