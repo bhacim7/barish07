@@ -21,12 +21,21 @@ def reconstruct_path(came_from, current):
     return total_path[::-1]  # Tersten çevir (Başlangıç -> Bitiş)
 
 
-def a_star_search(grid, start, goal):
+def a_star_search(grid, start, goal, line_bias_weight=0.0):
     """
     grid: 0=Engel, 255=Yol (Küçültülmüş Harita)
     start, goal: (x, y) tuple - Grid koordinatları
     """
     h, w = grid.shape
+
+    # Line Params for Bias (Ax + By + C = 0)
+    line_A, line_B, line_C, line_norm = 0, 0, 0, 1.0
+    if line_bias_weight > 0:
+        line_A = start[1] - goal[1]
+        line_B = goal[0] - start[0]
+        line_C = start[0] * goal[1] - goal[0] * start[1]
+        line_norm = math.sqrt(line_A**2 + line_B**2)
+        if line_norm == 0: line_norm = 1.0
 
     # 8 Yönlü Hareket (Sağ, Sol, Yukarı, Aşağı + Çaprazlar)
     neighbors = [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]
@@ -58,7 +67,16 @@ def a_star_search(grid, start, goal):
                 if grid[neighbor[1], neighbor[0]] == 0:
                     continue
 
-                tentative_g_score = g_score[current] + costs[i]
+                # Calculate base movement cost
+                move_cost = costs[i]
+
+                # Calculate Line Bias Cost
+                if line_bias_weight > 0:
+                    # Perpendicular distance to the Start-Goal line
+                    dist_to_line = abs(line_A * neighbor[0] + line_B * neighbor[1] + line_C) / line_norm
+                    move_cost += (dist_to_line * line_bias_weight)
+
+                tentative_g_score = g_score[current] + move_cost
 
                 if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                     came_from[neighbor] = current
@@ -123,7 +141,7 @@ def find_nearest_free_point(grid, point, search_radius=5):
                         return (nx, ny)
     return None
 
-def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size):
+def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0):
     """
     Bu fonksiyon ana koddan (deneme.py) çağrılır.
     1. Haritayı küçültür (Downsampling).
@@ -181,7 +199,7 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
             return None
 
     # 3. A* ÇALIŞTIR
-    path_grid = a_star_search(low_res_grid, start_grid, goal_grid)
+    path_grid = a_star_search(low_res_grid, start_grid, goal_grid, line_bias_weight=bias_to_goal_line)
 
     if path_grid is None: return None
 
