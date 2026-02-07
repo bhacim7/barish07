@@ -78,6 +78,9 @@ else:
 
     # Task 3 için Ekstra Hız (Base PWM üzerine eklenir)
     T3_SPEED_PWM = 100
+     # FAILSAFE SETTINGS
+    MAP_DECAY_AMOUNT = 2
+    BLIND_DRIVE_SECONDS = 3.0
 
     # --- YARIŞMA KOORDİNATLARI (RoboBoat 2026) ---
 
@@ -124,16 +127,8 @@ else:
         '1000Hz': (950, 1050, 6000000),
         '1200Hz': (1140, 1260, 6000000),
     }
-
-    # Başlangıç Görevi
-
-    MEVCUT_GOREV = "TASK3_APPROACH"
-
-
-
-# FAILSAFE SETTINGS
-MAP_DECAY_AMOUNT = 2
-BLIND_DRIVE_SECONDS = 3.0
+      
+   
 
     MEVCUT_GOREV = "TASK2_START"
 
