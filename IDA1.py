@@ -1039,6 +1039,11 @@ def main():
             # -----------------------------------------------------------------------------------------
             # 2. ORTAK VERİ ALMA: GPS (HATA DÜZELTME: EN BAŞA ALINDI)
             # -----------------------------------------------------------------------------------------
+            # CRITICAL: Reset navigation variables to prevent stale data usage
+            aci_farki = None
+            target_lat = None
+            target_lon = None
+
             # Bu satır artık mod fark etmeksizin her döngüde çalışacak.
             ida_enlem, ida_boylam = controller.get_current_position()
 
@@ -2189,12 +2194,17 @@ def main():
                                 if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_HOME"]:
                                     planner_bias = 0.5  # High penalty for deviating from the straight line
 
+                                # Dynamic Cone for Circular Patterns
+                                current_cone = 45.0
+                                if mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"]:
+                                    current_cone = 180.0
+
                                 new_path = planner.get_path_plan(
                                     (robot_x, robot_y), (tx_world, ty_world), nav_map,
                                     costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX,
                                     bias_to_goal_line=planner_bias,
                                     heuristic_weight=getattr(cfg, 'A_STAR_HEURISTIC_WEIGHT', 2.5),
-                                    cone_deg=45.0
+                                    cone_deg=current_cone
                                 )
                                 if new_path:
                                     current_path = new_path
@@ -2484,22 +2494,35 @@ def main():
                                 # Lidar verisini al (Her aşamada lazım)
                                 center_danger, left_d, center_d, right_d = process_lidar_sectors(local_lidar_scan, max_dist=10.0)
 
-                                # --- FAZ 0: BLIND GPS FALLBACK (CRITICAL FIX) ---
-                                # If A* fails but we have a valid GPS target, just GO!
+                                # --- FAZ 0: BLIND DRIVE FALLBACK (GPS OR LOCAL) ---
+                                # If A* fails but we have a valid target (GPS or Local), just GO!
                                 blind_drive_dur = getattr(cfg, 'BLIND_DRIVE_SECONDS', 3.0)
                                 blind_safe_dist = getattr(cfg, 'BLIND_DRIVE_SAFE_DIST', 0.7)
-                                if wait_duration < blind_drive_dur and gps_angle is not None and center_d > blind_safe_dist:
-                                    print(f"{Back.RED}[FAILSAFE] BLIND GPS DRIVE (Err: {gps_angle:.1f}){Style.RESET_ALL}")
+
+                                # Calculate Local Angle Error if GPS is not available but Local Target is
+                                local_angle_deg = None
+                                if gps_angle is None and tx_world is not None:
+                                    target_heading_rad = math.atan2(ty_world - robot_y, tx_world - robot_x)
+                                    alpha = target_heading_rad - robot_yaw
+                                    # Normalize to -pi..pi
+                                    alpha = (alpha + math.pi) % (2 * math.pi) - math.pi
+                                    # Convert to degrees and Negate for Right-Turn convention (Positive = Right)
+                                    local_angle_deg = -math.degrees(alpha)
+
+                                # Determine which angle to use
+                                active_angle_err = gps_angle if gps_angle is not None else local_angle_deg
+
+                                if wait_duration < blind_drive_dur and active_angle_err is not None and center_d > blind_safe_dist:
+                                    err_source = "GPS" if gps_angle is not None else "LOCAL"
+                                    print(f"{Back.RED}[FAILSAFE] BLIND {err_source} DRIVE (Err: {active_angle_err:.1f}){Style.RESET_ALL}")
 
                                     # Simple P-Control
                                     kp_blind = 1.0
-                                    turn_val = np.clip(gps_angle * kp_blind, -150, 150)
+                                    turn_val = np.clip(active_angle_err * kp_blind, -150, 150)
                                     base_blind = cfg.BASE_PWM + 100
 
                                     controller.set_servo(cfg.SOL_MOTOR, int(base_blind + turn_val))
                                     controller.set_servo(cfg.SAG_MOTOR, int(base_blind - turn_val))
-
-                                # ---------------------------------------------------------
                                 # FAZ 1: BEKLE VE GÖZLEM YAP (Blind süresinden sonra)
                                 # ---------------------------------------------------------
                                 elif wait_duration < (blind_drive_dur + 2.0):
