@@ -22,10 +22,11 @@ def reconstruct_path(came_from, current):
     return total_path[::-1]  # Tersten çevir (Başlangıç -> Bitiş)
 
 
-def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5):
+def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5, cone_deg=45.0):
     """
     grid: 0=Engel, 255=Yol (Küçültülmüş Harita)
     start, goal: (x, y) tuple - Grid koordinatları
+    cone_deg: Arama konisi açısı (derece). Başlangıçtan hedefe giden çizgiye göre.
     """
     h, w = grid.shape
 
@@ -37,6 +38,12 @@ def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5)
         line_C = start[0] * goal[1] - goal[0] * start[1]
         line_norm = math.sqrt(line_A**2 + line_B**2)
         if line_norm == 0: line_norm = 1.0
+
+    # Cone Logic Setup
+    start_goal_vec = (goal[0] - start[0], goal[1] - start[1])
+    goal_dist = math.sqrt(start_goal_vec[0]**2 + start_goal_vec[1]**2)
+    # Cosine threshold
+    cos_threshold = math.cos(math.radians(cone_deg))
 
     # 8 Yönlü Hareket (Sağ, Sol, Yukarı, Aşağı + Çaprazlar)
     neighbors = [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]
@@ -63,6 +70,22 @@ def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5)
 
             # Harita sınır kontrolü
             if 0 <= neighbor[0] < w and 0 <= neighbor[1] < h:
+                # BEARING CONSTRAINT CHECK
+                # Calculate vector from Start to Neighbor
+                sn_vec = (neighbor[0] - start[0], neighbor[1] - start[1])
+                sn_dist = math.sqrt(sn_vec[0]**2 + sn_vec[1]**2)
+
+                if sn_dist > 0 and goal_dist > 0:
+                    # Dot Product
+                    dot_val = (sn_vec[0] * start_goal_vec[0]) + (sn_vec[1] * start_goal_vec[1])
+                    cos_theta = dot_val / (sn_dist * goal_dist)
+
+                    # Clamp for safety
+                    cos_theta = max(-1.0, min(1.0, cos_theta))
+
+                    if cos_theta < cos_threshold:
+                         continue # Out of cone
+
                 # Engel Kontrolü (0 = Engel)
                 # Not: Grid üzerinde 0 tamamen engeldir.
                 if grid[neighbor[1], neighbor[0]] == 0:
@@ -142,7 +165,7 @@ def find_nearest_free_point(grid, point, search_radius=5):
                         return (nx, ny)
     return None
 
-def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0, heuristic_weight=2.5):
+def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0, heuristic_weight=2.5, cone_deg=45.0):
     """
     Bu fonksiyon ana koddan (deneme.py) çağrılır.
     1. Haritayı küçültür (Downsampling).
@@ -200,7 +223,7 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
             return None
 
     # 3. A* ÇALIŞTIR
-    path_grid = a_star_search(low_res_grid, start_grid, goal_grid, line_bias_weight=bias_to_goal_line, heuristic_weight=heuristic_weight)
+    path_grid = a_star_search(low_res_grid, start_grid, goal_grid, line_bias_weight=bias_to_goal_line, heuristic_weight=heuristic_weight, cone_deg=cone_deg)
 
     if path_grid is None: return None
 
@@ -283,7 +306,33 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
     CURVATURE_GAIN = 8.0  # Gain for speed reduction based on curvature
 
     if not path or len(path) < 2:
-        return 1500, 1500, None, 0.0
+        return 1500, 1500, None, 0.0, path
+
+    # --- WAYPOINT PRUNING (STAGNATION FIX) ---
+    # Find the closest point on the path to the robot
+    min_dist = float('inf')
+    closest_idx = 0
+    for i, p in enumerate(path):
+        d = math.sqrt((p[0] - robot_x)**2 + (p[1] - robot_y)**2)
+        if d < min_dist:
+            min_dist = d
+            closest_idx = i
+
+    # Prune points that are significantly behind (keep current segment)
+    # keeping closest_idx - 1 ensures we have the start of the current segment
+    start_idx = max(0, closest_idx - 1)
+    pruned_path = path[start_idx:]
+
+    # Use pruned path for calculation
+    path = pruned_path
+
+    if len(path) < 2:
+         # Path too short after pruning, return end of original path as target or just stop?
+         # Returning default stop is safer, but maybe we are AT the goal.
+         # If we are at goal, pruned path might be 1 point.
+         # Let's return defaults but with the pruned path.
+         return 1500, 1500, None, 0.0, pruned_path
+    # -----------------------------------------
 
     # 1. Dynamic Lookahead Calculation
     # L_d = np.clip(min_L + (gain * current_speed), min_L, max_L)
@@ -341,10 +390,8 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
     turn_cmd = np.clip(turn_cmd, -200, 200)
 
     # --- CRITICAL FIX: INVERTED LOGIC ---
-    # User reported: "when the target is on the right, the robot initially steers left"
-    # This implies the physical response is inverted relative to the math.
-    # We invert the command here to compensate.
-    turn_cmd = -turn_cmd
+    # REMOVED: turn_cmd = -turn_cmd
+    # Logic restored to standard: Target Right -> Negative Alpha -> Negative Command -> Turn Right
     # ------------------------------------
 
     # 5. Continuous Speed Profiling
@@ -359,4 +406,4 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
     sol_pwm = int(base_speed + current_speed_pwm - turn_cmd)
     sag_pwm = int(base_speed + current_speed_pwm + turn_cmd)
 
-    return sol_pwm, sag_pwm, target_point, alpha
+    return sol_pwm, sag_pwm, target_point, alpha, pruned_path
