@@ -2186,7 +2186,8 @@ def main():
                                     (robot_x, robot_y), (tx_world, ty_world), nav_map,
                                     costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX,
                                     bias_to_goal_line=planner_bias,
-                                    heuristic_weight=getattr(cfg, 'A_STAR_HEURISTIC_WEIGHT', 2.5)
+                                    heuristic_weight=getattr(cfg, 'A_STAR_HEURISTIC_WEIGHT', 2.5),
+                                    cone_deg=45.0
                                 )
                                 if new_path:
                                     current_path = new_path
@@ -2401,6 +2402,7 @@ def main():
 
                                 # Sadece GPS modunda ve kör sürüşte değilsek (Task 5 hariç)
                                 if nav_mode == "GPS" and mevcut_gorev not in ["TASK5_ENTER", "TASK5_DOCK", "TASK5_EXIT"]:
+                                    # --- REACTIVE LAYER (SAFETY) ---
                                     if center_danger:
                                         print(f"{Back.RED}[AVOID] ENGEL TESPİT EDİLDİ ({center_d:.2f}m)! ROTA İPTAL -> YENİDEN HESAPLANIYOR...{Style.RESET_ALL}")
                                         controller.set_servo(cfg.SOL_MOTOR, 1500)
@@ -2420,12 +2422,13 @@ def main():
                                 cur_spd = controller.get_horizontal_speed()
                                 if cur_spd is None: cur_spd = 0.0
 
-                                pp_sol, pp_sag, raw_target, current_error = planner.pure_pursuit_control(
+                                pp_sol, pp_sag, raw_target, current_error, pruned_path = planner.pure_pursuit_control(
                                     robot_x, robot_y, robot_yaw, current_path,
                                     current_speed=cur_spd,
                                     base_speed=current_base_pwm,
                                     prev_error=prev_heading_error
                                 )
+                                current_path = pruned_path
                                 prev_heading_error = current_error
 
                                 # --- TARGET SMOOTHING (HEDEF YUMUŞATMA) ---
