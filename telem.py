@@ -162,17 +162,91 @@ def handle_command(cmd: dict, controller, cfg, manual_mode: bool, mission_starte
                 mission_started = True
             print(f"[CMD] manual_mode -> {manual_mode} (mission_started={mission_started})")
 
+            # --- 2. GPS NOKTASI GÜNCELLEME (9 NOKTALI SİSTEM) ---
+
         elif ctype == "set_gps":
-            # index: 1..5, lat, lon
+
             try:
+
                 idx = int(cmd.get("index"))
+
                 lat = float(cmd.get("lat"))
+
                 lon = float(cmd.get("lon"))
-                setattr(cfg, f"GPS{idx}_enlem", lat)
-                setattr(cfg, f"GPS{idx}_boylam", lon)
-                print(f"[CMD] GPS{idx} updated to ({lat}, {lon})")
+
+                # 9 Noktalı Yeni Harita
+
+                if idx == 1:
+
+                    cfg.T1_GATE_ENTER_LAT, cfg.T1_GATE_ENTER_LON = lat, lon
+
+                    print(f"[CMD] GPS1 (T1 ENTER) Güncellendi: {lat}, {lon}")
+
+
+                elif idx == 2:
+
+                    cfg.T1_GATE_MID_LAT, cfg.T1_GATE_MID_LON = lat, lon
+
+                    print(f"[CMD] GPS2 (T1 MID) Güncellendi: {lat}, {lon}")
+
+
+                elif idx == 3:
+
+                    cfg.T1_GATE_EXIT_LAT, cfg.T1_GATE_EXIT_LON = lat, lon
+
+                    print(f"[CMD] GPS3 (T1 EXIT) Güncellendi: {lat}, {lon}")
+
+
+                elif idx == 4:
+
+                    cfg.T2_ZONE_ENTRY_LAT, cfg.T2_ZONE_ENTRY_LON = lat, lon
+
+                    print(f"[CMD] GPS4 (T2 ENTRY) Güncellendi: {lat}, {lon}")
+
+
+                elif idx == 5:
+
+                    cfg.T2_ZONE_MID_LAT, cfg.T2_ZONE_MID_LON = lat, lon
+
+                    print(f"[CMD] GPS5 (T2 MID) Güncellendi: {lat}, {lon}")
+
+
+                elif idx == 6:
+
+                    cfg.T2_ZONE_END_LAT, cfg.T2_ZONE_END_LON = lat, lon
+
+                    print(f"[CMD] GPS6 (T2 END) Güncellendi: {lat}, {lon}")
+
+
+                elif idx == 7:
+
+                    cfg.T3_GATE_SEARCH_LAT, cfg.T3_GATE_SEARCH_LON = lat, lon
+
+                    print(f"[CMD] GPS7 (T3 SEARCH) Güncellendi: {lat}, {lon}")
+
+
+                elif idx == 8:
+
+                    cfg.T3_YELLOW_APPROACH_LAT, cfg.T3_YELLOW_APPROACH_LON = lat, lon
+
+                    print(f"[CMD] GPS8 (T3 YELLOW) Güncellendi: {lat}, {lon}")
+
+
+                elif idx == 9:
+
+                    cfg.T5_DOCK_APPROACH_LAT, cfg.T5_DOCK_APPROACH_LON = lat, lon
+
+                    print(f"[CMD] GPS9 (T5 DOCK) Güncellendi: {lat}, {lon}")
+
+
+                else:
+
+                    print(f"[CMD] Geçersiz GPS İndeksi: {idx}")
+
+
             except Exception as e:
-                print(f"[CMD] set_gps error: {e}")
+
+                print(f"[CMD] set_gps hatası: {e}")
 
         elif ctype == "manual_pwm":
             # left, right: PWM values (only if manual_mode True)
