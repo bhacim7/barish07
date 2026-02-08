@@ -228,6 +228,48 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
 #  PURE PURSUIT (MOTOR KONTROL)
 # =============================================================================
 
+def circle_segment_intersection(p1, p2, center, radius):
+    """
+    Finds the intersection point between segment p1-p2 and circle.
+    Returns None if no valid intersection on the segment (leaving the circle).
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+    xc, yc = center
+
+    # Shift to origin
+    dx = x2 - x1
+    dy = y2 - y1
+    fx = x1 - xc
+    fy = y1 - yc
+
+    a = dx**2 + dy**2
+    b = 2 * (fx*dx + fy*dy)
+    c = (fx**2 + fy**2) - radius**2
+
+    discriminant = b**2 - 4*a*c
+    if discriminant < 0:
+        return None
+
+    discriminant = math.sqrt(discriminant)
+    t1 = (-b - discriminant) / (2*a)
+    t2 = (-b + discriminant) / (2*a)
+
+    # We want a point ON the segment, so 0 <= t <= 1
+    # We prefer the one further along the segment if both are valid?
+    # Usually we enter at one t and exit at another.
+    # We want the exit point (further from start if start is inside).
+
+    intersection = None
+
+    # Check t2 first (usually the exit point if moving p1->p2)
+    if 0 <= t2 <= 1:
+        intersection = (x1 + t2*dx, y1 + t2*dy)
+    elif 0 <= t1 <= 1:
+        intersection = (x1 + t1*dx, y1 + t1*dy)
+
+    return intersection
+
 def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, base_speed=1500, max_pwm_change=60, prev_error=0.0):
     """
     Verilen yolu takip etmek için gereken motor PWM değerlerini hesaplar.
@@ -247,15 +289,36 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
     # L_d = np.clip(min_L + (gain * current_speed), min_L, max_L)
     LOOKAHEAD_DIST = np.clip(MIN_L + (LOOKAHEAD_GAIN * current_speed), MIN_L, MAX_L)
 
-    # 2. Find Lookahead Point
-    target_point = path[-1]  # Varsayılan: Yolun sonu
+    # 2. Find Lookahead Point (Improved: Circle Intersection)
+    target_point = path[-1]  # Default: End of path
 
-    # Yolu tersten tara (veya baştan), robottan LOOKAHEAD_DIST kadar uzaktaki ilk noktayı bul
-    for p in path:
-        dist = math.sqrt((p[0] - robot_x) ** 2 + (p[1] - robot_y) ** 2)
-        if dist > LOOKAHEAD_DIST:
-            target_point = p
-            break
+    found_intersection = False
+
+    # Iterate through segments
+    for i in range(len(path) - 1):
+        p1 = path[i]
+        p2 = path[i+1]
+
+        d1 = math.sqrt((p1[0] - robot_x)**2 + (p1[1] - robot_y)**2)
+        d2 = math.sqrt((p2[0] - robot_x)**2 + (p2[1] - robot_y)**2)
+
+        # Check if the segment intersects the Lookahead Circle
+        # Typical case: p1 is inside (< L), p2 is outside (> L) -> Intersection exists
+        # Or both outside but line cuts through.
+
+        # Simple optimization: If d1 < L and d2 < L, skip (whole segment inside)
+        if d1 < LOOKAHEAD_DIST and d2 < LOOKAHEAD_DIST:
+            continue
+
+        intersect = circle_segment_intersection(p1, p2, (robot_x, robot_y), LOOKAHEAD_DIST)
+        if intersect:
+            target_point = intersect
+            found_intersection = True
+            break # Found the first valid intersection point
+
+    # If no intersection found (e.g. all points far away), pick the closest point on path?
+    # Or if all points inside, pick the last one.
+    # The default target_point = path[-1] handles the "all inside" case.
 
     # 3. Calculate Heading Error (Alpha)
     target_angle = math.atan2(target_point[1] - robot_y, target_point[0] - robot_x)
@@ -276,6 +339,13 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
 
     turn_cmd = (alpha * TURN_KP) + (error_diff * TURN_KD)
     turn_cmd = np.clip(turn_cmd, -200, 200)
+
+    # --- CRITICAL FIX: INVERTED LOGIC ---
+    # User reported: "when the target is on the right, the robot initially steers left"
+    # This implies the physical response is inverted relative to the math.
+    # We invert the command here to compensate.
+    turn_cmd = -turn_cmd
+    # ------------------------------------
 
     # 5. Continuous Speed Profiling
     # Calculate Curvature (kappa) = 2 * sin(alpha) / L_d

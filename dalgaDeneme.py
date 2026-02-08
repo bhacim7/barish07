@@ -2394,6 +2394,21 @@ def main():
                             # --- STANDART A* SÜRÜŞÜ (TASK 1, 2, 3 - PLANNER VARSA) ---
                             elif current_path:
 
+                                # --- YENİ: REAKTİF ENGEL KAÇINMA (LIDAR) ---
+                                # Eğer önümüzde aniden bir engel belirirse (center_danger),
+                                # A* rotasını iptal et ve anında dur. Bir sonraki döngüde yeniden planlama yapılacak.
+                                # Lidar verisi: center_danger, left_d, center_d, right_d (Yukarıda hesaplandı)
+
+                                # Sadece GPS modunda ve kör sürüşte değilsek (Task 5 hariç)
+                                if nav_mode == "GPS" and mevcut_gorev not in ["TASK5_ENTER", "TASK5_DOCK", "TASK5_EXIT"]:
+                                    if center_danger:
+                                        print(f"{Back.RED}[AVOID] ENGEL TESPİT EDİLDİ ({center_d:.2f}m)! ROTA İPTAL -> YENİDEN HESAPLANIYOR...{Style.RESET_ALL}")
+                                        controller.set_servo(cfg.SOL_MOTOR, 1500)
+                                        controller.set_servo(cfg.SAG_MOTOR, 1500)
+                                        current_path = None  # Rotayı sil -> Replan tetiklenir
+                                        continue  # Döngüyü kır, aşağıya gitme
+                                # -------------------------------------------
+
                                 path_lost_time = None
 
                                 # HIZ AYARI: Task 3'te ("ENTER" veya "RETURN" aşamalarında) daha hızlı git
