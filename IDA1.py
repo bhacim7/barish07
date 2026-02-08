@@ -2140,6 +2140,23 @@ def main():
                             tx_world = override_target_x
                             ty_world = override_target_y
 
+                            # --- FAILSAFE DÜZELTMESİ (A* ÇÖKERSE KÖR SÜRÜŞ İÇİN) ---
+                            # Eğer A* rota bulamazsa ve Blind Drive'a düşersek, robotun eski GPS hedefine değil,
+                            # şu anki aktif daire noktasına (override_target) gitmesini sağlamalıyız.
+                            # Bunun için 'aci_farki' (gps_angle) değişkenini YEREL AÇI ile eziyoruz.
+
+                            # 1. Hedef Açısı (Radyan -> Derece)
+                            local_target_angle = math.atan2(ty_world - robot_y, tx_world - robot_x)
+                            local_target_deg = math.degrees(local_target_angle)
+
+                            # 2. Robot Açısı (Radyan -> Derece)
+                            # NOT: ZED Yaw açısı ile hedef açısı aynı referans düzlemindedir (Start Point).
+                            robot_yaw_deg = math.degrees(robot_yaw)
+
+                            # 3. Açı Farkını Hesapla ve EZE (Override)
+                            aci_farki = nav.signed_angle_difference(robot_yaw_deg, local_target_deg)
+                            gps_angle = aci_farki
+
                         # DURUM B: Standart GPS / Vision
                         else:
                             gps_angle = aci_farki if 'aci_farki' in locals() else None
