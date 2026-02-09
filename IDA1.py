@@ -980,25 +980,110 @@ def main():
     try:
         while True:
 
-            # ---- 1. Komut kuyruğunu boşalt ve gelen komutları uygula ----
+            # ---- 1. KOMUT İŞLEME VE SORGULAMA (POLLING) ----
             try:
                 while True:
                     cmd = cmd_queue.get_nowait()
-                    my_id = 1
+
+                    # --- KİMLİK KONTROLÜ ---
+                    my_id = 1  # DİKKAT: İDA 2 kodunda burayı 2 yap!
                     incoming_id = cmd.get("target_id")
-                    if incoming_id is not None:
-                        if incoming_id != my_id:
-                            # Bu mesaj başka bir tekneye (örn: Tekne 2) gitmiş, biz ilgilenmiyoruz.
-                            print(f"[CMD IGNORED] Hedef ID: {incoming_id} != Benim ID: {my_id}")
-                            continue  # Döngünün başına dön, sonraki mesajı kontrol et
-                    print("[CMD RX]", cmd)
-                    # EMERGENCY_STOP yakala
-                    if isinstance(cmd, dict) and cmd.get("cmd") == "emergency_stop":
-                        print("\n[INFO] Yer kontrolden ACİL KAPATMA alındı, kapanıyor...")
+
+                    # Mesaj bana değilse ve genel değilse yoksay
+                    if incoming_id is not None and incoming_id != my_id:
+                        continue
+
+                    command_str = cmd.get("cmd")
+
+                    # --- DURUM 1: YER KONTROL "RAPOR VER" DEDİ Mİ? ---
+                    if command_str == "report_status":
+
+                        # -- Payload Hazırlığı (Eski kodunun aynısı, buraya taşıdık) --
+                        gps_points = {
+                            "id": my_id,
+                            "GPS1": {"lat": float(getattr(cfg, "T1_GATE_ENTER_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T1_GATE_ENTER_LON", 0.0))},
+                            "GPS2": {"lat": float(getattr(cfg, "T1_GATE_MID_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T1_GATE_MID_LON", 0.0))},
+                            "GPS3": {"lat": float(getattr(cfg, "T1_GATE_EXIT_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T1_GATE_EXIT_LON", 0.0))},
+                            "GPS4": {"lat": float(getattr(cfg, "T2_ZONE_ENTRY_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T2_ZONE_ENTRY_LON", 0.0))},
+                            "GPS5": {"lat": float(getattr(cfg, "T2_ZONE_MID_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T2_ZONE_MID_LON", 0.0))},
+                            "GPS6": {"lat": float(getattr(cfg, "T2_ZONE_END_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T2_ZONE_END_LON", 0.0))},
+                            "GPS7": {"lat": float(getattr(cfg, "T3_GATE_SEARCH_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T3_GATE_SEARCH_LON", 0.0))},
+                            "GPS8": {"lat": float(getattr(cfg, "T3_YELLOW_APPROACH_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T3_YELLOW_APPROACH_LON", 0.0))},
+                            "GPS9": {"lat": float(getattr(cfg, "T5_DOCK_APPROACH_LAT", 0.0)),
+                                     "lon": float(getattr(cfg, "T5_DOCK_APPROACH_LON", 0.0))},
+                        }
+
+                        hs = controller.get_horizontal_speed()
+
+                        # Ana Paket
+                        payload = {
+                            "id": my_id,  # Kimlik bilgisi önemli!
+                            "t_ms": datetime.datetime.now().strftime('%H:%M:%S'),
+                            "pwm_L": utils.nint(controller.get_servo_pwm(cfg.SOL_MOTOR)),
+                            "pwm_R": utils.nint(controller.get_servo_pwm(cfg.SAG_MOTOR)),
+                            "spd": utils.nfloat(hs),
+                            "hdg": (
+                                f"{magnetic_heading:.0f}" if 'magnetic_heading' in locals() and magnetic_heading is not None else None),
+                            "trg_hdg": utils.nint(adviced_course) if 'adviced_course' in locals() else 0,
+                            "hlth": magnetic_heading_state if 'magnetic_heading_state' in locals() else "UNKNOWN",
+                            "task": mevcut_gorev,
+                            "MEVCUT_KONUM": {"lat": utils.nfloat(ida_enlem), "lon": utils.nfloat(ida_boylam)},
+                            "dist": utils.nint(hedefe_mesafe) if 'hedefe_mesafe' in locals() else 0,
+                            "mod": bool(manual_mode),
+                            "FPS": utils.nfloat(round(zed.get_current_fps())) if 'zed' in locals() else 0,
+                            "GÖREV_NOKTALARI": gps_points
+                        }
+
+                        # --- CEVABI GÖNDER ---
+                        tx.send(payload)
+
+                    # --- DURUM 2: GPS GÜNCELLEME ---
+                    elif command_str == "set_gps":
+                        # Bunu telem.py yerine burada yapmak daha güvenli çünkü cfg değişkenlerini doğrudan güncelliyoruz.
+                        idx = cmd.get("index")
+                        lat = cmd.get("lat")
+                        lon = cmd.get("lon")
+
+                        if idx == 1:
+                            cfg.T1_GATE_ENTER_LAT = lat; cfg.T1_GATE_ENTER_LON = lon
+                        elif idx == 2:
+                            cfg.T1_GATE_MID_LAT = lat; cfg.T1_GATE_MID_LON = lon
+                        elif idx == 3:
+                            cfg.T1_GATE_EXIT_LAT = lat; cfg.T1_GATE_EXIT_LON = lon
+                        elif idx == 4:
+                            cfg.T2_ZONE_ENTRY_LAT = lat; cfg.T2_ZONE_ENTRY_LON = lon
+                        elif idx == 5:
+                            cfg.T2_ZONE_MID_LAT = lat; cfg.T2_ZONE_MID_LON = lon
+                        elif idx == 6:
+                            cfg.T2_ZONE_END_LAT = lat; cfg.T2_ZONE_END_LON = lon
+                        elif idx == 7:
+                            cfg.T3_GATE_SEARCH_LAT = lat; cfg.T3_GATE_SEARCH_LON = lon
+                        elif idx == 8:
+                            cfg.T3_YELLOW_APPROACH_LAT = lat; cfg.T3_YELLOW_APPROACH_LON = lon
+                        elif idx == 9:
+                            cfg.T5_DOCK_APPROACH_LAT = lat; cfg.T5_DOCK_APPROACH_LON = lon
+
+                        print(f"[GPS] Güncellendi: Nokta {idx}")
+
+                    # --- DURUM 3: ACİL STOP ---
+                    elif command_str == "emergency_stop":
+                        print("\n[ACİL] EMERGENCY STOP ALINDI!")
                         raise utils.EmergencyShutdown()
-                        raise KeyboardInterrupt
-                    manual_mode, mission_started = telem.handle_command(cmd, controller, cfg, manual_mode,
-                                                                        mission_started)
+
+                    # --- DURUM 4: DİĞER KOMUTLAR (Manuel/Oto, PWM vb.) ---
+                    else:
+                        # Bunları senin mevcut telem.py dosyan halletsin
+                        manual_mode, mission_started = telem.handle_command(cmd, controller, cfg, manual_mode,
+                                                                            mission_started)
+
             except queue.Empty:
                 pass
 
@@ -2193,7 +2278,7 @@ def main():
                                 planner_bias = 0.0
                                 if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_HOME"]:
                                     planner_bias = 0.5  # High penalty for deviating from the straight line
-
+                                
                                 # Dynamic Cone for Circular Patterns
                                 current_cone = 45.0
                                 if mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"]:
@@ -2508,10 +2593,10 @@ def main():
                                     alpha = (alpha + math.pi) % (2 * math.pi) - math.pi
                                     # Convert to degrees and Negate for Right-Turn convention (Positive = Right)
                                     local_angle_deg = -math.degrees(alpha)
-
+                                
                                 # Determine which angle to use
                                 active_angle_err = gps_angle if gps_angle is not None else local_angle_deg
-
+                                
                                 if wait_duration < blind_drive_dur and active_angle_err is not None and center_d > blind_safe_dist:
                                     err_source = "GPS" if gps_angle is not None else "LOCAL"
                                     print(f"{Back.RED}[FAILSAFE] BLIND {err_source} DRIVE (Err: {active_angle_err:.1f}){Style.RESET_ALL}")
@@ -2523,6 +2608,8 @@ def main():
 
                                     controller.set_servo(cfg.SOL_MOTOR, int(base_blind + turn_val))
                                     controller.set_servo(cfg.SAG_MOTOR, int(base_blind - turn_val))
+
+                                
                                 # FAZ 1: BEKLE VE GÖZLEM YAP (Blind süresinden sonra)
                                 # ---------------------------------------------------------
                                 elif wait_duration < (blind_drive_dur + 2.0):
@@ -2779,75 +2866,7 @@ def main():
                             client_socket.sendall(size_pack + data)
                     except Exception:
                         pass
-            # 5. Telemetri Gönderimi (Senin kodun)
-            if 'current_fps' in locals():
-                # 9 Noktalı Yeni Yapı
-                gps_points = {
-                    "id": 1,
-                    "GPS1": {"lat": float(getattr(cfg, "T1_GATE_ENTER_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T1_GATE_ENTER_LON", 0.0))},
-                    "GPS2": {"lat": float(getattr(cfg, "T1_GATE_MID_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T1_GATE_MID_LON", 0.0))},
-                    "GPS3": {"lat": float(getattr(cfg, "T1_GATE_EXIT_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T1_GATE_EXIT_LON", 0.0))},
 
-                    "GPS4": {"lat": float(getattr(cfg, "T2_ZONE_ENTRY_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T2_ZONE_ENTRY_LON", 0.0))},
-                    "GPS5": {"lat": float(getattr(cfg, "T2_ZONE_MID_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T2_ZONE_MID_LON", 0.0))},
-                    "GPS6": {"lat": float(getattr(cfg, "T2_ZONE_END_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T2_ZONE_END_LON", 0.0))},
-
-                    "GPS7": {"lat": float(getattr(cfg, "T3_GATE_SEARCH_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T3_GATE_SEARCH_LON", 0.0))},
-                    "GPS8": {"lat": float(getattr(cfg, "T3_YELLOW_APPROACH_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T3_YELLOW_APPROACH_LON", 0.0))},
-
-                    "GPS9": {"lat": float(getattr(cfg, "T5_DOCK_APPROACH_LAT", 0.0)),
-                             "lon": float(getattr(cfg, "T5_DOCK_APPROACH_LON", 0.0))},
-                }
-
-                hs = controller.get_horizontal_speed()
-                payload = {
-                    "t_ms": datetime.datetime.now().strftime('%H:%M:%S'),
-
-                    # 2) SOL İTİCİ İTKİ İSTEĞİ (PWM)
-                    "SOL_İTİCİ_İTKİ_İSTEĞİ_PWM": utils.nint(controller.get_servo_pwm(cfg.SOL_MOTOR)),
-
-                    # 3) SAĞ İTİCİ İTKİ İSTEĞİ (PWM)
-                    "SAĞ_İTİCİ_İTKİ_İSTEĞİ_PWM": utils.nint(controller.get_servo_pwm(cfg.SAG_MOTOR)),
-
-                    # 4) İDA GERÇEK HIZ (m/s)
-                    "İDA_GERÇEK_HIZ_mps": utils.nfloat(hs),
-
-                    # 5) GERÇEK HEADING (°)
-                    "GERÇEK_HEADING_deg": (
-                        f"{magnetic_heading:.0f}" if 'magnetic_heading' in locals() and magnetic_heading is not None else None),
-
-                    # 6) HEDEF HEADING (°)
-                    "HEDEF_HEADING_deg": utils.nint(adviced_course) if 'adviced_course' in locals() else 0,
-
-                    # 7) HEADING SAĞLIĞI
-                    "HEADING_SAĞLIĞI": magnetic_heading_state if 'magnetic_heading_state' in locals() else "UNKNOWN",
-
-                    # 8) SONRAKİ GÖREV NOKTASI
-                    "SONRAKİ_GÖREV_NOKTASI": mevcut_gorev,
-
-                    # 9) MEVCUT KONUM (lat/lon ayrı anahtarlarla)
-                    "MEVCUT_KONUM": {"lat": utils.nfloat(ida_enlem), "lon": utils.nfloat(ida_boylam)},
-
-                    # 10) KALAN MESAFE (m)
-                    "KALAN_MESAFE_m": utils.nint(hedefe_mesafe) if 'hedefe_mesafe' in locals() else 0,
-
-                    # 11) MANUEL MOD
-                    "MANUEL_MOD": bool(manual_mode),
-
-                    "FPS": utils.nfloat(round(zed.get_current_fps())) if 'zed' in locals() else 0,
-                }
-                payload["GÖREV_NOKTALARI"] = gps_points
-
-                tx.send(payload)  # asenkron çalışıyor
-                # controller.set_servo(1,1500)
 
 
 
