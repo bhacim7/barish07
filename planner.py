@@ -8,10 +8,28 @@ import numpy as np
 #  A* (A-STAR) ALGORİTMASI ÇEKİRDEĞİ
 # =============================================================================
 
-def heuristic(a, b, weight=2.5):
+def heuristic(a, b, weight=2.5, start_node=None, deviation_weight=0.0):
     # Euclidean Mesafe (Kuş uçuşu) * Ağırlık
     # Increased to 2.5 to make planner more aggressive/greedy (Best-First)
-    return math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) * weight
+    h_val = math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) * weight
+
+    # Directional Heuristic (Penalty for deviation from Start-Goal line)
+    if start_node is not None and deviation_weight > 0.0:
+        # Line defined by start_node -> b (goal)
+        dx = b[0] - start_node[0]
+        dy = b[1] - start_node[1]
+        line_len = math.sqrt(dx*dx + dy*dy)
+
+        if line_len > 0.001:
+            # Perpendicular distance from point 'a' to line
+            # |(x2-x1)(y1-y0) - (x1-x0)(y2-y1)| / length
+            # Here: (dx)*(start_y - a_y) - (start_x - a_x)*(dy)
+            # Note: (y1-y0) is -(a_y - start_y)
+            numerator = abs(dx * (start_node[1] - a[1]) - (start_node[0] - a[0]) * dy)
+            deviation = numerator / line_len
+            h_val += deviation * deviation_weight
+
+    return h_val
 
 
 def reconstruct_path(came_from, current):
@@ -22,7 +40,7 @@ def reconstruct_path(came_from, current):
     return total_path[::-1]  # Tersten çevir (Başlangıç -> Bitiş)
 
 
-def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5, cone_deg=45.0):
+def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5, cone_deg=45.0, directional_heuristic_weight=0.0):
     """
     grid: 0=Engel, 255=Yol (Küçültülmüş Harita)
     start, goal: (x, y) tuple - Grid koordinatları
@@ -56,7 +74,8 @@ def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5,
 
     came_from = {}
     g_score = {start: 0}
-    f_score = {start: heuristic(start, goal, weight=heuristic_weight)}
+    # Pass start node and directional weight to heuristic
+    f_score = {start: heuristic(start, goal, weight=heuristic_weight, start_node=start, deviation_weight=directional_heuristic_weight)}
 
     while open_set:
         # En düşük F skoruna sahip kareyi seç
@@ -105,7 +124,8 @@ def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5,
                 if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g_score
-                    f = tentative_g_score + heuristic(neighbor, goal, weight=heuristic_weight)
+                    # Pass start node and directional weight to heuristic
+                    f = tentative_g_score + heuristic(neighbor, goal, weight=heuristic_weight, start_node=start, deviation_weight=directional_heuristic_weight)
                     f_score[neighbor] = f
                     heapq.heappush(open_set, (f, neighbor))
 
@@ -165,7 +185,7 @@ def find_nearest_free_point(grid, point, search_radius=5):
                         return (nx, ny)
     return None
 
-def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0, heuristic_weight=2.5, cone_deg=45.0):
+def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0, heuristic_weight=2.5, cone_deg=45.0, directional_heuristic_weight=1.0):
     """
     Bu fonksiyon ana koddan (deneme.py) çağrılır.
     1. Haritayı küçültür (Downsampling).
@@ -223,7 +243,7 @@ def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costm
             return None
 
     # 3. A* ÇALIŞTIR
-    path_grid = a_star_search(low_res_grid, start_grid, goal_grid, line_bias_weight=bias_to_goal_line, heuristic_weight=heuristic_weight, cone_deg=cone_deg)
+    path_grid = a_star_search(low_res_grid, start_grid, goal_grid, line_bias_weight=bias_to_goal_line, heuristic_weight=heuristic_weight, cone_deg=cone_deg, directional_heuristic_weight=directional_heuristic_weight)
 
     if path_grid is None: return None
 
