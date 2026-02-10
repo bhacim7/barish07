@@ -977,6 +977,11 @@ def main():
     hybrid_local_target = None
     hybrid_target_reached = False
 
+    # Initial Alignment Variables
+    prev_target_lat = None
+    prev_target_lon = None
+    force_initial_alignment = False
+
     try:
         while True:
 
@@ -2211,6 +2216,13 @@ def main():
                 # --- GENEL NAVİGASYON HESABI ---
                 # Hangi görevde olursak olalım, target_lat belirlendiyse hesap yap.
                 if target_lat is not None:
+                    # Check for target change (Initial Alignment Logic)
+                    if (target_lat != prev_target_lat or target_lon != prev_target_lon):
+                        force_initial_alignment = True
+                        prev_target_lat = target_lat
+                        prev_target_lon = target_lon
+                        # print(f"[NAV] New Target Detected -> Forcing Alignment")
+
                     adviced_course = nav.calculate_bearing(ida_enlem, ida_boylam, target_lat, target_lon)
                     aci_farki = nav.signed_angle_difference(magnetic_heading, adviced_course)
                     hedefe_mesafe = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
@@ -2414,22 +2426,32 @@ def main():
                             # 1. Hizalama Gerektiren Durum Analizi
                             should_force_alignment = False
 
-                            # A) Daima Hizalama Yapanlar (A* Kullanmaz, Sadece Heading/Pusula Sürüşü)
-                            # TASK2_START burada kalsın ki start noktasındaki stabil davranışı korusun.
-                            if mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT",
-                                                "TASK2_START", "TASK3_START"]:
-                                should_force_alignment = True
+                            # A) Initial Alignment Priority (Requested Logic)
+                            if force_initial_alignment:
+                                if 'aci_farki' in locals() and aci_farki is not None:
+                                    if abs(aci_farki) > 5.0:
+                                        should_force_alignment = True
+                                    else:
+                                        force_initial_alignment = False # Alignment Complete
+                                        # print("[NAV] Initial Alignment Complete.")
 
-                            # B) HİBRİT MOD (Önce Dön, Sonra A* Kullan) - Sizin istediğiniz kısım burası
-                            # TASK2 Mid ve End aşamalarında, eğer kafa çok dönükse önce düzeltecek.
-                            elif mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK3_GATE_APPROACH"]:
-                                threshold = getattr(cfg, 'HYBRID_HEADING_THRESHOLD', 30.0)
-                                # Eğer açı farkı eşikten büyükse A*'ı bekleme, önce dön.
-                                if abs(aci_farki) > threshold:
+                            # B) Daima Hizalama Yapanlar (A* Kullanmaz, Sadece Heading/Pusula Sürüşü)
+                            # TASK2_START burada kalsın ki start noktasındaki stabil davranışı korusun.
+                            if not force_initial_alignment: # Only check if not already forced
+                                if mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT",
+                                                    "TASK2_START", "TASK3_START"]:
                                     should_force_alignment = True
-                                else:
-                                    # Açı düzeldi, artık A* (current_path) bloğuna düşebiliriz.
-                                    should_force_alignment = False
+
+                                # C) HİBRİT MOD (Önce Dön, Sonra A* Kullan) - Sizin istediğiniz kısım burası
+                                # TASK2 Mid ve End aşamalarında, eğer kafa çok dönükse önce düzeltecek.
+                                elif mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK3_GATE_APPROACH"]:
+                                    threshold = getattr(cfg, 'HYBRID_HEADING_THRESHOLD', 30.0)
+                                    # Eğer açı farkı eşikten büyükse A*'ı bekleme, önce dön.
+                                    if abs(aci_farki) > threshold:
+                                        should_force_alignment = True
+                                    else:
+                                        # Açı düzeldi, artık A* (current_path) bloğuna düşebiliriz.
+                                        should_force_alignment = False
 
                             # -------------------------------------------------------------------------
                             # BLOĞU UYGULA
@@ -2490,6 +2512,11 @@ def main():
 
                                 # Spot Turn Check
                                 threshold = getattr(cfg, 'SPOT_TURN_THRESHOLD', 45.0)
+
+                                # Override threshold for Initial Alignment
+                                if force_initial_alignment:
+                                    threshold = 5.0
+
                                 spot_pwm = getattr(cfg, 'SPOT_TURN_PWM', 200)
 
                                 if abs(heading_err) > threshold:
