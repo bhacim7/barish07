@@ -22,7 +22,7 @@ def reconstruct_path(came_from, current):
     return total_path[::-1]  # Tersten çevir (Başlangıç -> Bitiş)
 
 
-def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5, cone_deg=45.0):
+def a_star_search(grid, start, goal, line_bias_weight=0.0, heuristic_weight=2.5, cone_deg=30.0):
     """
     grid: 0=Engel, 255=Yol (Küçültülmüş Harita)
     start, goal: (x, y) tuple - Grid koordinatları
@@ -165,7 +165,7 @@ def find_nearest_free_point(grid, point, search_radius=5):
                         return (nx, ny)
     return None
 
-def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0, heuristic_weight=2.5, cone_deg=45.0):
+def get_path_plan(start_world, goal_world, high_res_map, costmap_center_m, costmap_res, costmap_size, bias_to_goal_line=0.0, heuristic_weight=2.5, cone_deg=40.0):
     """
     Bu fonksiyon ana koddan (deneme.py) çağrılır.
     1. Haritayı küçültür (Downsampling).
@@ -293,7 +293,7 @@ def circle_segment_intersection(p1, p2, center, radius):
 
     return intersection
 
-def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, base_speed=1500, max_pwm_change=60, prev_error=0.0):
+def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, base_speed=1500, max_pwm_change=100, prev_error=0.0):
     """
     Verilen yolu takip etmek için gereken motor PWM değerlerini hesaplar.
     PID Kontrolü eklenmiştir.
@@ -302,8 +302,8 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
     MIN_L = 1.0  # Min Lookahead (m)
     MAX_L = 3.0  # Max Lookahead (m)
     LOOKAHEAD_GAIN = 0.5  # Speed gain for lookahead
-    BASE_THROTTLE = 80.0  # Base throttle PWM to add to base_speed
-    CURVATURE_GAIN = 8.0  # Gain for speed reduction based on curvature
+    BASE_THROTTLE = 200.0  # Base throttle PWM to add to base_speed
+    CURVATURE_GAIN = 10.0  # Gain for speed reduction based on curvature
 
     if not path or len(path) < 2:
         return 1500, 1500, None, 0.0, path
@@ -380,8 +380,8 @@ def pure_pursuit_control(robot_x, robot_y, robot_yaw, path, current_speed=0.0, b
     # 4. PWM Hesapla (PID Kontrol)
     # Hata: alpha (Radyan cinsinden açı farkı)
 
-    TURN_KP = 200.0  # Oransal (Biraz artırdık)
-    TURN_KD = 50.0   # Türev (Titremeyi önler)
+    TURN_KP = 300.0  # Oransal (Biraz artırdık)
+    TURN_KD = 100.0   # Türev (Titremeyi önler)
 
     # Türev hesabı (Hata değişimi)
     error_diff = alpha - prev_error

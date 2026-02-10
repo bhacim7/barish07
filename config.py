@@ -13,9 +13,8 @@ NAV_MODE = "GPS"
 SERIAL_PORT = os.getenv("TELEM_PORT", "/dev/ttyUSB1")
 SERIAL_BAUD = int(os.getenv("TELEM_BAUD", "57600"))
 
-SOL_MOTOR=1
-SAG_MOTOR=3
-
+SOL_MOTOR = 1
+SAG_MOTOR = 3
 
 BASE_PWM = 1500
 MIN_PWM_LIMIT = 1100
@@ -35,7 +34,6 @@ ESC_INIT_DELAY = 3.0
 # "FC": Sadece Uçuş Kontrol Kartı (Orange Cube / Pixhawk)
 # "FUSED": İkisinin Ortalaması (Basit Füzyon)
 HEADING_SOURCE = "ZED"
-
 
 # =============================================================================
 # MODA ÖZEL AYARLAR
@@ -58,7 +56,7 @@ if NAV_MODE == "VISION":
     Kd_PIXEL = 0.1
 
     # Motor ve Hız Kontrolü
-    CRUISE_PWM = 100  # Sabit hız
+    CRUISE_PWM = 200  # Sabit hız
     ESCAPE_PWM = 300  # Kaçış şiddeti
     MAX_PWM_CHANGE = 120  # (YENİ) Ani hız değişim limiti (Yumuşatma için)
 
@@ -68,7 +66,7 @@ else:
 
     # Sistem Ayarları
     STREAM = True  # Yer istasyonuna görüntü basılsın mı?
-    RECORD_VIDEO = False  # SD karta kayıt yapılsın mı?
+    RECORD_VIDEO = True  # SD karta kayıt yapılsın mı?
     SHOW_LOCAL_WINDOW = False  # True: Monitörde pencere aç, False: Arka planda çalış
     YOLO_CONFIDENCE = 0.40  # Hava durumuna göre düşürüp artırabilirsin
     CAM_HFOV = 110.0  # ZED 2i Yatay Görüş Açısı (Derece)
@@ -80,7 +78,7 @@ else:
 
     # Task 3 için Ekstra Hız (Base PWM üzerine eklenir)
     T3_SPEED_PWM = 100
-     # FAILSAFE SETTINGS
+    # FAILSAFE SETTINGS
     MAP_DECAY_AMOUNT = 5
     BLIND_DRIVE_SECONDS = 3.0
     BLIND_DRIVE_SAFE_DIST = 0.7
@@ -93,8 +91,8 @@ else:
 
     # Hybrid Navigation Logic
     HYBRID_STEP_DIST = 2.0  # Meters
-    HYBRID_HEADING_THRESHOLD = 30.0 # Degrees
-    TASK2_SEARCH_DIAMETER = 2.0
+    HYBRID_HEADING_THRESHOLD = 30.0  # Degrees
+    TASK2_SEARCH_DIAMETER = 1.0
     TASK3_SEARCH_DIAMETER = 2.0
 
     # --- YARIŞMA KOORDİNATLARI (RoboBoat 2026) ---
@@ -109,12 +107,12 @@ else:
 
     # Task 1 Navigation Settings
     SPOT_TURN_THRESHOLD = 15.0  # Degrees
-    SPOT_TURN_PWM = 130
+    SPOT_TURN_PWM = 150
 
     # TASK 2: Debris Clearance (Engel ve Işık Sahası)
     # T2 Başlangıcı (Referans)
-    T2_ZONE_ENTRY_LAT = 40.8091617
-    T2_ZONE_ENTRY_LON = 29.2619491
+    T2_ZONE_ENTRY_LAT = 40.8091576
+    T2_ZONE_ENTRY_LON = 29.2618971
     # TASK 2 (ADDED)
     T2_ZONE_MID_LAT = 40.809024
     T2_ZONE_MID_LON = 29.2619161
@@ -142,4 +140,3 @@ else:
         '1000Hz': (950, 1050, 6000000),
         '1200Hz': (1140, 1260, 6000000),
     }
-       

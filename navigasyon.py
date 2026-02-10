@@ -1,7 +1,8 @@
 import math
 
+
 def signed_angle_difference(C, A):  # C as current_heading(magnetic_heading) and A as adviced_course
-    
+
     # Açılar 0-360 arasında normalize edilir
     C %= 360
     A %= 360
@@ -51,6 +52,7 @@ def calculate_bearing(lat1, lon1, lat2, lon2):
 
     return bearing_degrees
 
+
 def destination_point(lat, lon, bearing_deg, distance_m):
     # lat/lon in degrees, bearing in degrees, distance in meters -> returns lat,lon degrees
     R = 6371000.0
@@ -62,6 +64,7 @@ def destination_point(lat, lon, bearing_deg, distance_m):
     lon2 = lon1 + math.atan2(math.sin(b) * math.sin(d / R) * math.cos(lat1),
                              math.cos(d / R) - math.sin(lat1) * math.sin(lat2))
     return math.degrees(lat2), math.degrees(lon2)
+
 
 def generate_waypoints(lat1, lon1, lat2, lon2, spacing_m):
     total = haversine(lat1, lon1, lat2, lon2)
@@ -77,6 +80,7 @@ def generate_waypoints(lat1, lon1, lat2, lon2, spacing_m):
     if len(wps) == 0 or (abs(wps[-1][0] - lat2) > 1e-9 or abs(wps[-1][1] - lon2) > 1e-9):
         wps.append((lat2, lon2))
     return wps
+
 
 def shift_waypoint(lat, lon, bearing_to_wp, offset_m, side='starboard'):
     # side: 'starboard' -> bearing + 90, 'port' -> bearing - 90

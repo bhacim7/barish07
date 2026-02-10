@@ -176,4 +176,3 @@ class USVController:
             print(f"Enlem: {lat:.6f}°, Boylam: {lon:.6f}°, Yükseklik: {alt:.2f} m")
         else:
             print("GPS verisi henüz alınamadı.")
-

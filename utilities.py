@@ -2,6 +2,7 @@ import math
 import threading, queue, os, datetime, cv2
 import time
 
+
 def nfloat(x):
     try:
         if x is None:
@@ -10,6 +11,7 @@ def nfloat(x):
         return xf if math.isfinite(xf) else None
     except Exception:
         return None
+
 
 def nint(x):
     try:
@@ -21,7 +23,8 @@ def nint(x):
         return int(round(xf))
     except Exception:
         return None
-    
+
+
 def _init_video_writer(width, height, fps_hint=20):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     # ZED FPS’i makul aralığa sıkıştır
@@ -35,6 +38,7 @@ def _init_video_writer(width, height, fps_hint=20):
     vw = cv2.VideoWriter(name, fourcc, fps, (width, height))
     return vw, name
 
+
 def _close_video_writer():
     global video_writer, video_filename
     if video_writer is not None:
@@ -43,14 +47,17 @@ def _close_video_writer():
         video_writer = None
         video_filename = None
 
+
 # --- Fusion mantığı: açılarla çalışırken düzgün wrap/ortalamaya dikkat et ---
 def wrap_to_pi(angle):
     """angle in radians -> [-pi, pi]"""
     return (angle + math.pi) % (2 * math.pi) - math.pi
 
+
 def angle_diff(a, b):
     """smallest signed difference a-b in radians"""
     return wrap_to_pi(a - b)
+
 
 def angle_weighted_mean(a, b, w):  # w = weight for b (0..1)
     # compute mean on unit circle to avoid wrap issues
@@ -61,10 +68,10 @@ def angle_weighted_mean(a, b, w):  # w = weight for b (0..1)
     return math.atan2(y, x)
 
 
-
 class EmergencyShutdown(Exception):
     """Yer kontrolden acil kapatma isteği geldiğinde fırlatılır."""
     pass
+
 
 class AsyncVideoWriter:
     def __init__(self, path, fps=20.0, max_queue=120):
@@ -183,11 +190,13 @@ class AsyncVideoWriter:
             pass
         self.t.join(timeout=3.0)
 
+
 class AlphaFilter:
     """
     # Initialize the magnetic heading filter
     magnetic_filter = AlphaFilter(alpha=0.1)  # Lower alpha means more smoothing
     """
+
     def __init__(self, alpha=0.1):
         self.alpha = alpha
         self.filtered_x = None
@@ -213,11 +222,13 @@ class AlphaFilter:
 
         return filtered_heading
 
+
 class KalmanFilter:
     """
     # Initialize Kalman filter for magnetic heading
     magnetic_filter = KalmanFilter(process_variance=1e-3, measurement_variance=1e-1)
     """
+
     def __init__(self, process_variance=1e-3, measurement_variance=1e-1):
         self.process_variance = process_variance  # Process noise covariance
         self.measurement_variance = measurement_variance  # Measurement noise covariance
@@ -255,5 +266,3 @@ class KalmanFilter:
         # Convert back to angle
         filtered_angle = math.degrees(math.atan2(self.y_estimate, self.x_estimate))
         return filtered_angle % 360  # Ensure it stays in the 0-360° range
-
-
