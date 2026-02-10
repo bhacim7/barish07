@@ -73,6 +73,10 @@ else:
     YOLO_CONFIDENCE = 0.40  # Hava durumuna göre düşürüp artırabilirsin
     CAM_HFOV = 110.0  # ZED 2i Yatay Görüş Açısı (Derece)
 
+    # Task Toggle Flags
+    ENABLE_TASK3 = True
+    ENABLE_TASK5 = True
+
     MEVCUT_GOREV = "TASK2_START"
 
     # Sürüş Katsayıları
