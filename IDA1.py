@@ -1052,6 +1052,7 @@ def main():
                         lat = cmd.get("lat")
                         lon = cmd.get("lon")
 
+
                         if idx == 1:
                             cfg.T1_GATE_ENTER_LAT = lat; cfg.T1_GATE_ENTER_LON = lon
                         elif idx == 2:
@@ -1078,6 +1079,18 @@ def main():
                         print("\n[ACİL] EMERGENCY STOP ALINDI!")
                         raise utils.EmergencyShutdown()
 
+                    # --- DURUM 5: SES KESMESİ ---
+                    elif command_str == "interrupt_request":
+                        print("\n[SES] Ses isteği geldi, göreve gidiliyor!")
+                        request = cmd.get("request")
+                        if request == 3:
+                            task6_interrupt_request = 3
+                        elif request == 5:
+                            task6_interrupt_request = 5
+                        else:
+                            pass
+
+
                     # --- DURUM 4: DİĞER KOMUTLAR (Manuel/Oto, PWM vb.) ---
                     else:
                         # Bunları senin mevcut telem.py dosyan halletsin
@@ -1091,6 +1104,8 @@ def main():
             # =========================================================================
             # Robot ne yaparsa yapsın, eğer arka plandaki kulak (thread) bir şey duyarsa
             # burası devreye girer ve görevi zorla değiştirir.
+
+
 
             if task6_interrupt_request is not None:
                 # Ses thread'inden bir emir geldi!
@@ -1120,6 +1135,7 @@ def main():
                 # Robotun kafası karışmasın diye kısa bir bekleme ve döngü başı
                 time.sleep(0.1)
                 continue  # continue diyerek aşağıdakileri (Lidar, Kamera vs) atla, yeni görevle baştan başla.
+
 
             # -----------------------------------------------------------------------------------------
             # 2. ORTAK VERİ ALMA: GPS (HATA DÜZELTME: EN BAŞA ALINDI)
@@ -2214,7 +2230,8 @@ def main():
 
                         # 1. HARİTAYI AL
                         # Task 2 dönerken Yeşili, Task 3 dönerken Sarıyı yoksay
-                        ignore_green_buoys = (mevcut_gorev == "TASK2_GREEN_MARKER_FOUND")
+                        # Task 2 dönerken Yeşili, Task 3 dönerken Sarıyı yoksay
+                        ignore_green_buoys = (mevcut_gorev == "TASK3_SEARCH_PATTERN ", "TASK2_GREEN_MARKER_FOUND")
                         ignore_yellow_buoys = (mevcut_gorev in ["TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"])
 
                         nav_map, inflated_mask = get_inflated_nav_map(costmap_img,
@@ -2278,7 +2295,7 @@ def main():
                                 planner_bias = 0.0
                                 if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_HOME"]:
                                     planner_bias = 0.5  # High penalty for deviating from the straight line
-                                
+
                                 # Dynamic Cone for Circular Patterns
                                 current_cone = 45.0
                                 if mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"]:
@@ -2593,10 +2610,10 @@ def main():
                                     alpha = (alpha + math.pi) % (2 * math.pi) - math.pi
                                     # Convert to degrees and Negate for Right-Turn convention (Positive = Right)
                                     local_angle_deg = -math.degrees(alpha)
-                                
+
                                 # Determine which angle to use
                                 active_angle_err = gps_angle if gps_angle is not None else local_angle_deg
-                                
+
                                 if wait_duration < blind_drive_dur and active_angle_err is not None and center_d > blind_safe_dist:
                                     err_source = "GPS" if gps_angle is not None else "LOCAL"
                                     print(f"{Back.RED}[FAILSAFE] BLIND {err_source} DRIVE (Err: {active_angle_err:.1f}){Style.RESET_ALL}")
@@ -2609,7 +2626,7 @@ def main():
                                     controller.set_servo(cfg.SOL_MOTOR, int(base_blind + turn_val))
                                     controller.set_servo(cfg.SAG_MOTOR, int(base_blind - turn_val))
 
-                                
+
                                 # FAZ 1: BEKLE VE GÖZLEM YAP (Blind süresinden sonra)
                                 # ---------------------------------------------------------
                                 elif wait_duration < (blind_drive_dur + 2.0):
