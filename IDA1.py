@@ -1980,9 +1980,6 @@ def main():
                 # ---------------------------------------------------------------------
 
                 # Global Değişkenler
-                if 'task3_breadcrumbs' not in globals():
-                    global task3_breadcrumbs
-                    task3_breadcrumbs = []
 
                 if 'task3_turn_direction' not in globals():
                     global task3_turn_direction
@@ -2150,17 +2147,17 @@ def main():
                     print(f"{Fore.GREEN}[TASK3] RETURN MODU BAŞLADI -> GATE APPROACH NOKTASINA DÖNÜLÜYOR{Style.RESET_ALL}")
                     mevcut_gorev = "TASK3_RETURN_YELLOW"
 
-                elif mevcut_gorev in ["TASK3_RETURN_YELLOW", "TASK3_RETURN_SEARCH"]:
+                elif mevcut_gorev in ["TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
                     # 1. AŞAMA: Sarı Şamandıra Yaklaşma Noktasına Git
                     if mevcut_gorev == "TASK3_RETURN_YELLOW":
                         target_lat = cfg.T3_YELLOW_APPROACH_LAT
                         target_lon = cfg.T3_YELLOW_APPROACH_LON
                         if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
                             print(f"{Fore.GREEN}[TASK3] REVERSE: YELLOW POINT REACHED -> GOING TO START{Style.RESET_ALL}")
-                            mevcut_gorev = "TASK3_RETURN_SEARCH"
+                            mevcut_gorev = "TASK3_RETURN_ENTRY"
 
                     # 2. AŞAMA: Başlangıç (Gate Search) Noktasına Git
-                    elif mevcut_gorev == "TASK3_RETURN_SEARCH":
+                    elif mevcut_gorev == "TASK3_RETURN_ENTRY":
                         target_lat = cfg.T3_GATE_SEARCH_LAT
                         target_lon = cfg.T3_GATE_SEARCH_LON
                         if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
@@ -2170,7 +2167,6 @@ def main():
                             elif task3_retry_count <= 3:
                                print(f"{Fore.YELLOW}[TASK3] HOME REACHED (RETRY) -> RESTARTING{Style.RESET_ALL}")
                                mevcut_gorev = "TASK3_START"
-                               task3_breadcrumbs = []
                             else:
                                print(f"{Fore.RED}[TASK3] HOME REACHED (FAIL) -> NEXT TASK (TASK5){Style.RESET_ALL}")
                                mevcut_gorev = "TASK5_APPROACH"
@@ -2322,7 +2318,7 @@ def main():
 
                             # --- HYBRID NAV LOGIC (STEP-SCAN-STEP) ---
                             if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK3_GATE_APPROACH","TASK2_RETURN_END","TASK2_RETURN_MID","TASK2_RETURN_ENTRY",
-                                                "TASK3_RETURN_YELLOW", "TASK3_RETURN_SEARCH"]:
+                                                "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
                                 # 1. Mesafe Kontrolü (Hedeve vardık mı?)
                                 need_new_target = True
                                 if hybrid_local_target:
@@ -2364,7 +2360,7 @@ def main():
                                 # Determine Bias based on Task 2 Requirements
                                 planner_bias = 0.0
                                 if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END","TASK2_RETURN_MID","TASK2_RETURN_ENTRY",
-                                                    "TASK3_RETURN_YELLOW", "TASK3_RETURN_SEARCH"]:
+                                                    "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
                                     planner_bias = 0.5  # High penalty for deviating from the straight line
 
                                 # Dynamic Cone for Circular Patterns
@@ -2504,7 +2500,7 @@ def main():
                                 # C) HİBRİT MOD (Önce Dön, Sonra A* Kullan) - Sizin istediğiniz kısım burası
                                 # TASK2 Mid ve End aşamalarında, eğer kafa çok dönükse önce düzeltecek.
                                 elif mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK3_GATE_APPROACH","TASK2_RETURN_END","TASK2_RETURN_MID","TASK2_RETURN_ENTRY",
-                                                      "TASK3_RETURN_YELLOW", "TASK3_RETURN_SEARCH"]:
+                                                      "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
                                     threshold = getattr(cfg, 'HYBRID_HEADING_THRESHOLD', 30.0)
                                     # Eğer açı farkı eşikten büyükse A*'ı bekleme, önce dön.
                                     if abs(aci_farki) > threshold:
