@@ -159,6 +159,51 @@ def smooth_path(path_world, weight_data=0.5, weight_smooth=0.1, tolerance=0.0000
 
     return new_path
 
+def check_line_of_sight(start_world, end_world, costmap, costmap_center_m, costmap_res, costmap_size):
+    """
+    Checks if the direct line between start and end is clear of obstacles.
+    """
+    if costmap is None: return False
+
+    cw, ch = costmap_size[0] // 2, costmap_size[1] // 2
+
+    def to_pixel(wx, wy):
+        dx_m = wx - costmap_center_m[0]
+        dy_m = wy - costmap_center_m[1]
+        px = int(cw + (dx_m / costmap_res))
+        py = int(ch - (dy_m / costmap_res))
+        return px, py
+
+    p1 = to_pixel(*start_world)
+    p2 = to_pixel(*end_world)
+
+    h, w = costmap.shape
+
+    # Check if endpoints are valid
+    if not (0 <= p1[0] < w and 0 <= p1[1] < h): return False
+    if not (0 <= p2[0] < w and 0 <= p2[1] < h): return False
+
+    # Line Iterator (Bresenham-like sampling)
+    x0, y0 = p1
+    x1, y1 = p2
+
+    dist = math.hypot(x1 - x0, y1 - y0)
+    steps = int(dist)
+
+    if steps == 0:
+        return costmap[y0, x0] > 0
+
+    for i in range(steps + 1):
+        t = i / steps
+        x = int(x0 + t * (x1 - x0))
+        y = int(y0 + t * (y1 - y0))
+
+        if 0 <= x < w and 0 <= y < h:
+            if costmap[y, x] == 0:  # Obstacle (Black)
+                return False
+
+    return True
+
 def find_nearest_free_point(grid, point, search_radius=5):
     """
     Eğer nokta engelse (0), çevresindeki en yakın serbest noktayı (255) bulur.
