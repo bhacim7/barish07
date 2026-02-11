@@ -2352,33 +2352,49 @@ def main():
                                     gps_target_angle_err=gps_angle
                                 )
 
-                        # 3. A* ROTA PLANLAMA
+                        # 3. PATH CHECK & A* ROTA PLANLAMA
                         plan_timer += 1
-                        if plan_timer > 4:
-                            plan_timer = 0
-                            if tx_world is not None:
-                                # Determine Bias based on Task 2 Requirements
-                                planner_bias = 0.0
-                                if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END","TASK2_RETURN_MID","TASK2_RETURN_ENTRY",
-                                                    "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
-                                    planner_bias = 0.5  # High penalty for deviating from the straight line
+                        path_is_clear = False
 
-                                # Dynamic Cone for Circular Patterns
-                                current_cone = 45.0
-                                if mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"]:
-                                    current_cone = 180.0
+                        # Check if direct line to target is clear
+                        if tx_world is not None:
+                            path_is_clear = planner.check_line_of_sight(
+                                (robot_x, robot_y), (tx_world, ty_world), nav_map,
+                                costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX
+                            )
 
-                                new_path = planner.get_path_plan(
-                                    (robot_x, robot_y), (tx_world, ty_world), nav_map,
-                                    costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX,
-                                    bias_to_goal_line=planner_bias,
-                                    heuristic_weight=getattr(cfg, 'A_STAR_HEURISTIC_WEIGHT', 2.5),
-                                    cone_deg=current_cone
-                                )
-                                if new_path:
-                                    current_path = new_path
-                                else:
-                                    current_path = None
+                        if not path_is_clear:
+                            # Path blocked -> Use A*
+                            if plan_timer > 4:
+                                plan_timer = 0
+                                if tx_world is not None:
+                                    # Determine Bias based on Task 2 Requirements
+                                    planner_bias = 0.0
+                                    if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END", "TASK2_RETURN_MID",
+                                                        "TASK2_RETURN_ENTRY",
+                                                        "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
+                                        planner_bias = 0.5  # High penalty for deviating from the straight line
+
+                                    # Dynamic Cone for Circular Patterns
+                                    current_cone = 45.0
+                                    if mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN",
+                                                        "TASK3_YELLOW_FOUND"]:
+                                        current_cone = 180.0
+
+                                    new_path = planner.get_path_plan(
+                                        (robot_x, robot_y), (tx_world, ty_world), nav_map,
+                                        costmap_center_m, COSTMAP_RES_M_PER_PX, COSTMAP_SIZE_PX,
+                                        bias_to_goal_line=planner_bias,
+                                        heuristic_weight=getattr(cfg, 'A_STAR_HEURISTIC_WEIGHT', 2.5),
+                                        cone_deg=current_cone
+                                    )
+                                    if new_path:
+                                        current_path = new_path
+                                    else:
+                                        current_path = None
+                        else:
+                            # Path Clear -> Direct Drive (No A* needed)
+                            current_path = [(robot_x, robot_y), (tx_world, ty_world)]
 
                         # 3. SÜRÜŞ KARARI (PLAN A vs PLAN B)
                         if mission_started and not manual_mode:
@@ -2513,8 +2529,8 @@ def main():
                             # BLOĞU UYGULA
                             # -------------------------------------------------------------------------
 
-                            # DURUM 1: Zorla Hizalama (Spot Turn & Heading Hold)
-                            if should_force_alignment:
+                            # DURUM 1: Zorla Hizalama veya Temiz Rota (Direct Drive)
+                            if should_force_alignment or (path_is_clear and tx_world is not None):
                                 # 1. Vision Scan ve Bearing Hesabı (Mevcut kodunuzdaki gibi)
                                 visual_bearing = None
                                 best_red = None
@@ -2555,16 +2571,32 @@ def main():
 
                                 # 2. Select Target Bearing
                                 final_bearing = 0
+                                use_local_yaw = False
+                                local_target_angle = 0.0
+
                                 if visual_bearing is not None:
                                     final_bearing = visual_bearing
+                                elif target_lat is not None:
+                                    final_bearing = nav.calculate_bearing(ida_enlem, ida_boylam, target_lat, target_lon)
+                                elif tx_world is not None:
+                                    # Fallback to local target logic
+                                    use_local_yaw = True
+                                    local_target_angle = math.atan2(ty_world - robot_y, tx_world - robot_x)
                                 else:
-                                    if target_lat is not None:
-                                        final_bearing = nav.calculate_bearing(ida_enlem, ida_boylam, target_lat, target_lon)
-                                    else:
-                                        final_bearing = magnetic_heading
+                                    final_bearing = magnetic_heading
 
                                 # 3. Calculate Error & Control
-                                heading_err = nav.signed_angle_difference(magnetic_heading, final_bearing)
+                                heading_err = 0.0
+                                if use_local_yaw:
+                                    # Local Frame Error
+                                    alpha = local_target_angle - robot_yaw
+                                    # Normalize to -pi..pi
+                                    alpha = (alpha + math.pi) % (2 * math.pi) - math.pi
+                                    # Convert to degrees, INVERT for Task 1 P-Control logic (Pos Err -> Turn Right)
+                                    heading_err = -math.degrees(alpha)
+                                else:
+                                    # Global Frame Error
+                                    heading_err = nav.signed_angle_difference(magnetic_heading, final_bearing)
 
                                 # Spot Turn Check
                                 threshold = getattr(cfg, 'SPOT_TURN_THRESHOLD', 45.0)
@@ -2572,6 +2604,11 @@ def main():
                                 # Override threshold for Initial Alignment
                                 if force_initial_alignment:
                                     threshold = 5.0
+
+                                # DISABLE SPOT TURN IF JUST DOING DIRECT DRIVE (unless forced)
+                                if not should_force_alignment and path_is_clear:
+                                    # Increase threshold to avoid spot turns during normal nav
+                                    threshold = 90.0
 
                                 spot_pwm = getattr(cfg, 'SPOT_TURN_PWM', 200)
 
