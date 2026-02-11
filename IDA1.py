@@ -1125,11 +1125,22 @@ def main():
 
                 # 1. GÖREVİ DEĞİŞTİR
                 if detected_task == 3:
-                    mevcut_gorev = "TASK3_APPROACH"
+                    if mevcut_gorev in ["TASK3_START" ," TASK3_GATE_APPROACH", "TASK3_SEARCH_PATTERN","TASK3_YELLOW_FOUND","TASK3_RETURN_HOME"]:
+                        son_gorev = "TASK3_START"
+                    elif mevcut_gorev in ["TASK5_APPROACH", "TASK5_ENTER", "TASK5_DOCK", "TASK5_EXIT"]:
+                        son_gorev = "TASK5_APPROACH"
+
+                    mevcut_gorev = "TASK6_SPEED"
                     print(f"{Fore.YELLOW}>> ROTA GÜNCELLENDİ: TASK 3 (ACİL DURUM NOKTASI){Style.RESET_ALL}")
 
                 elif detected_task == 5:
-                    mevcut_gorev = "TASK5_APPROACH"
+                    if mevcut_gorev in ["TASK3_START", " TASK3_GATE_APPROACH", "TASK3_SEARCH_PATTERN",
+                                        "TASK3_YELLOW_FOUND", "TASK3_RETURN_HOME"]:
+                        son_gorev = "TASK3_START"
+                    elif mevcut_gorev in ["TASK5_APPROACH", "TASK5_ENTER", "TASK5_DOCK", "TASK5_EXIT"]:
+                        son_gorev = "TASK5_APPROACH"
+
+                    mevcut_gorev = "TASK6_DOCK"
                     print(f"{Fore.YELLOW}>> ROTA GÜNCELLENDİ: TASK 5 (MARİNAYA DÖNÜŞ){Style.RESET_ALL}")
 
                 # 2. ESKİ ROTA VE HEDEFLERİ SİL (RESET)
@@ -1699,6 +1710,17 @@ def main():
 
                 target_lat = None
                 target_lon = None
+                if mevcut_gorev == "TASK6_SPEED":
+                    target_lat = cfg.T3_GATE_SEARCH_LAT
+                    target_lon = cfg.T3_GATE_SEARCH_LON
+                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                        mevcut_gorev = son_gorev
+
+                if mevcut_gorev == "TASK6_DOCK":
+                    target_lat = cfg.T5_DOCK_APPROACH_LAT
+                    target_lon = cfg.T5_DOCK_APPROACH_LON
+                    if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                        mevcut_gorev = son_gorev
 
                 # --- GÖREV 1: KANAL GEÇİŞİ (STATE MACHINE) ---
                 if mevcut_gorev == "TASK1_APPROACH":
@@ -2476,7 +2498,7 @@ def main():
                             # TASK2_START burada kalsın ki start noktasındaki stabil davranışı korusun.
                             if not force_initial_alignment: # Only check if not already forced
                                 if mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT",
-                                                    "TASK2_START", "TASK3_START"]:
+                                                    "TASK2_START", "TASK3_START","TASK6_SPEED","TASK6_DOCK"]:
                                     should_force_alignment = True
 
                                 # C) HİBRİT MOD (Önce Dön, Sonra A* Kullan) - Sizin istediğiniz kısım burası
