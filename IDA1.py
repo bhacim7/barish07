@@ -70,7 +70,7 @@ if cfg.STREAM == True:
 # Görüntü İşleme
 # torch.backends.cudnn.benchmark = True  # sabit input boyutları için hız
 # --- GÜNCELLEME: YENİ DATASET VE ORIN NANO OPTİMİZASYONU ---
-model_path = "/home/yarkin/roboboatIDA/roboboat/weights/best.engine"
+model_path = "/home/yarkin/roboboatIDA/roboboat/weights/small640.engine"
 
 if not os.path.exists(model_path):
     print(f"[UYARI] {model_path} bulunamadı, yolov8n kullanılıyor.")
@@ -958,7 +958,7 @@ def main():
 
     mevcut_gorev = cfg.MEVCUT_GOREV
 
-    manual_mode = False
+    manual_mode = True
     mission_started = True
 
     # --- FREN KONTROL DEĞİŞKENİ ---
@@ -984,15 +984,16 @@ def main():
 
     # Return Home Flag
     returning_home = False
-
+    ida_enlem = 0.0
+    ida_boylam = 0.0
     try:
         while True:
-
+            ida_enlem, ida_boylam = controller.get_current_position()
             # ---- 1. KOMUT İŞLEME VE SORGULAMA (POLLING) ----
             try:
                 while True:
                     cmd = cmd_queue.get_nowait()
-
+                    
                     # --- KİMLİK KONTROLÜ ---
                     my_id = 1  # DİKKAT: İDA 2 kodunda burayı 2 yap!
                     incoming_id = cmd.get("target_id")
@@ -1165,7 +1166,7 @@ def main():
             target_lon = None
 
             # Bu satır artık mod fark etmeksizin her döngüde çalışacak.
-            ida_enlem, ida_boylam = controller.get_current_position()
+            
 
             # [EK GÜVENLİK] GPS verisi yoksa (None ise) telemetri hatası vermemesi için kontrol edilebilir
             # ancak utils.nfloat zaten None kontrolü yapıyor, o yüzden kod kırılmaz.
