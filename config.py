@@ -58,7 +58,7 @@ if NAV_MODE == "VISION":
     Kd_PIXEL = 0.1
 
     # Motor ve Hız Kontrolü
-    CRUISE_PWM = 100  # Sabit hız
+    CRUISE_PWM = 150  # Sabit hız
     ESCAPE_PWM = 300  # Kaçış şiddeti
     MAX_PWM_CHANGE = 120  # (YENİ) Ani hız değişim limiti (Yumuşatma için)
 
@@ -68,7 +68,7 @@ else:
 
     # Sistem Ayarları
     STREAM = True  # Yer istasyonuna görüntü basılsın mı?
-    RECORD_VIDEO = False  # SD karta kayıt yapılsın mı?
+    RECORD_VIDEO = True  # SD karta kayıt yapılsın mı?
     SHOW_LOCAL_WINDOW = False  # True: Monitörde pencere aç, False: Arka planda çalış
     YOLO_CONFIDENCE = 0.40  # Hava durumuna göre düşürüp artırabilirsin
     CAM_HFOV = 110.0  # ZED 2i Yatay Görüş Açısı (Derece)
@@ -91,25 +91,25 @@ else:
     MAX_TILT_ANGLE = 5.0
 
     # A* Tuning
-    A_STAR_HEURISTIC_WEIGHT = 3.0
+    A_STAR_HEURISTIC_WEIGHT = 2.5
     LIDAR_FREE_GAIN = 25
     LIDAR_OCCUPIED_GAIN = 80
 
     # Hybrid Navigation Logic
     HYBRID_STEP_DIST = 2.0  # Meters
     HYBRID_HEADING_THRESHOLD = 30.0 # Degrees
-    TASK2_SEARCH_DIAMETER = 2.0
+    TASK2_SEARCH_DIAMETER = 1.0
     TASK3_SEARCH_DIAMETER = 2.0
 
     # --- YARIŞMA KOORDİNATLARI (RoboBoat 2026) ---
 
     # TASK 1: Evacuation Route (Kanal Geçişi)
-    T1_GATE_ENTER_LAT = 40.8630501
-    T1_GATE_ENTER_LON = 29.2599517
-    T1_GATE_EXIT_LAT = 40.8629223
-    T1_GATE_EXIT_LON = 29.2599123
-    T1_GATE_MID_LAT = 40.8629862
-    T1_GATE_MID_LON = 29.2599320
+    T1_GATE_ENTER_LAT = 40.8091428
+    T1_GATE_ENTER_LON = 29.2619132
+    T1_GATE_EXIT_LAT = 40.8089363
+    T1_GATE_EXIT_LON = 29.2619269
+    T1_GATE_MID_LAT = 40.8090249
+    T1_GATE_MID_LON =  29.2618888
 
     # Task 1 Navigation Settings
     SPOT_TURN_THRESHOLD = 15.0  # Degrees
@@ -117,14 +117,14 @@ else:
 
     # TASK 2: Debris Clearance (Engel ve Işık Sahası)
     # T2 Başlangıcı (Referans)
-    T2_ZONE_ENTRY_LAT = 40.8091617
-    T2_ZONE_ENTRY_LON = 29.2619491
+    T2_ZONE_ENTRY_LAT = 40.8091428
+    T2_ZONE_ENTRY_LON = 29.2619132
     # TASK 2 (ADDED)
-    T2_ZONE_MID_LAT = 40.809024
-    T2_ZONE_MID_LON = 29.2619161
+    T2_ZONE_MID_LAT = 40.8090249
+    T2_ZONE_MID_LON = 29.2618888
     # T2 Bitişi (Hedef Burası)
-    T2_ZONE_END_LAT = 40.8089552
-    T2_ZONE_END_LON = 29.2619292
+    T2_ZONE_END_LAT = 40.8089363
+    T2_ZONE_END_LON = 29.2619269
 
     # TASK 3: Speed Challenge (Sürat Kapısı)
     T3_GATE_SEARCH_LAT = 40.8089735
