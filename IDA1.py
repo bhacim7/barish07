@@ -56,7 +56,7 @@ GATE_COLOR_TOLERANCE = 5.0  # Kapı geçişinde renkler arası maks mesafe fark�
 
 # --- YENİ: NAVİGASYON VE ROBOT FİZİĞİ ---
 ROBOT_RADIUS_M = 0.45  # Robotun yarıçapı (metre) - Gövde genişliği/2 + biraz pay
-INFLATION_MARGIN_M = 0.05  # Ekstra güvenlik payı (Duvara ne kadar yaklaşsın?)
+INFLATION_MARGIN_M = 0.08  # Ekstra güvenlik payı (Duvara ne kadar yaklaşsın?)
 # Toplam Şişirme = 0.60m -> Haritada 6 piksellik gri duvar örülecek.
 
 # Sadece Görüntü Aktarma icin (yarısmada komut satırına alınacak)
@@ -958,7 +958,7 @@ def main():
 
     mevcut_gorev = cfg.MEVCUT_GOREV
 
-    manual_mode = True
+    manual_mode = False
     mission_started = True
 
     # --- FREN KONTROL DEĞİŞKENİ ---
@@ -2372,7 +2372,7 @@ def main():
                                     # Determine Bias based on Task 2 Requirements
                                     planner_bias = 0.0
                                     if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END", "TASK2_RETURN_MID",
-                                                        "TASK2_RETURN_ENTRY",
+                                                        "TASK2_RETURN_ENTRY","TASK3_GATE_APPROACH"
                                                         "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
                                         planner_bias = 0.5  # High penalty for deviating from the straight line
 
@@ -2625,7 +2625,7 @@ def main():
                                     # Forward P-Control
                                     kp = 1.0
                                     corr = heading_err * kp
-                                    fwd = cfg.BASE_PWM + 100
+                                    fwd = cfg.BASE_PWM + 130
 
                                     sol = int(np.clip(fwd + corr, 1100, 1900))
                                     sag = int(np.clip(fwd - corr, 1100, 1900))
@@ -2719,7 +2719,7 @@ def main():
 
                                 # --- FAZ 0: BLIND DRIVE FALLBACK (GPS OR LOCAL) ---
                                 # If A* fails but we have a valid target (GPS or Local), just GO!
-                                blind_drive_dur = getattr(cfg, 'BLIND_DRIVE_SECONDS', 3.0)
+                                blind_drive_dur = getattr(cfg, 'BLIND_DRIVE_SECONDS', 4.0)
                                 blind_safe_dist = getattr(cfg, 'BLIND_DRIVE_SAFE_DIST', 0.7)
 
                                 # Calculate Local Angle Error if GPS is not available but Local Target is
@@ -2742,7 +2742,7 @@ def main():
                                     # Simple P-Control
                                     kp_blind = 1.0
                                     turn_val = np.clip(active_angle_err * kp_blind, -150, 150)
-                                    base_blind = cfg.BASE_PWM + 100
+                                    base_blind = cfg.BASE_PWM + 130
 
                                     controller.set_servo(cfg.SOL_MOTOR, int(base_blind + turn_val))
                                     controller.set_servo(cfg.SAG_MOTOR, int(base_blind - turn_val))
