@@ -255,62 +255,8 @@ def mapping_update_lidar(robot_x, robot_y, robot_yaw_rad, lidar_points):
     costmap_img = cv2.subtract(costmap_img, occupied_mask)  # Siyahlaştır
 
 
-#  LANDMARK (ŞAMANDIRA) HAFIZA SİSTEMİ (YENİ EKLENECEK)
+#  LANDMARK (ŞAMANDIRA) HAFIZA SİSTEMİ KALDIRILDI
 # =============================================================================
-
-# Hafızadaki şamandıraları tutacak liste
-# Yapısı: { "id": int, "color": "RED"/"GREEN", "x": float, "y": float, "confidence": int, "last_seen": timestamp }
-landmarks_memory = []
-landmark_id_counter = 0
-
-
-def update_landmark_memory(color_type, obj_world_x, obj_world_y):
-    """
-    Tespit edilen şamandırayı hafızaya ekler veya günceller.
-    Lidar onayı almış cisimler buraya gelir.
-    """
-    global landmarks_memory, landmark_id_counter
-
-    current_time = time.time()
-    MATCH_THRESHOLD = 2.0  # 1 metre içindeki cisimler "aynı" kabul edilir
-
-    found = False
-    for lm in landmarks_memory:
-        # Mesafe hesabı (Öklid)
-        dist = math.sqrt((lm["x"] - obj_world_x) ** 2 + (lm["y"] - obj_world_y) ** 2)
-
-        if dist < MATCH_THRESHOLD:
-            # Zaten bildiğimiz bir şamandıra, konumunu güncelle (Ortalamasını al)
-            # Yeni konumun %20'sini, eski konumun %80'ini al (Stabilite için)
-            lm["x"] = (lm["x"] * 0.5) + (obj_world_x * 0.5)
-            lm["y"] = (lm["y"] * 0.5) + (obj_world_y * 0.5)
-            lm["last_seen"] = current_time
-            lm["confidence"] += 1
-
-            # Eğer rengi değiştiyse (Kamera hatası olabilir), en çok görülen renge karar verilir
-            if lm["color"] != color_type:
-                # Renk çatışması durumunda güveni biraz düşür
-                lm["confidence"] = max(1, lm["confidence"] - 2)
-                if lm["confidence"] < 5:  # Çok düştüyse rengi değiştir
-                    lm["color"] = color_type
-
-            found = True
-            break
-
-    if not found:
-        # Yeni bir şamandıra keşfedildi!
-        landmark_id_counter += 1
-        new_lm = {
-            "id": landmark_id_counter,
-            "color": color_type,
-            "x": obj_world_x,
-            "y": obj_world_y,
-            "confidence": 1,  # İlk tespit
-            "last_seen": current_time
-        }
-        landmarks_memory.append(new_lm)
-        # Debug için yazdırabilirsin
-        # print(f"[HAFIZA] YENİ {color_type} ŞAMANDIRA (ID: {landmark_id_counter}) X:{obj_world_x:.1f} Y:{obj_world_y:.1f}")
 
 
 def lidar_thread_func():
@@ -439,55 +385,6 @@ def get_inflated_nav_map(raw_costmap, ignore_green=False, ignore_yellow=False): 
 
     nav_map = raw_costmap.copy()
 
-    global landmarks_memory, robot_x, robot_y
-    cur_rx = robot_x if 'robot_x' in globals() else 0
-    cur_ry = robot_y if 'robot_y' in globals() else 0
-
-    red_objs = []
-    green_objs = []
-    black_obstacles = []
-
-    if 'landmarks_memory' in globals():
-        for lm in landmarks_memory:
-            if lm["confidence"] < 5: continue
-            dist = math.sqrt((lm["x"] - cur_rx) ** 2 + (lm["y"] - cur_ry) ** 2)
-            if dist > 20.0: continue
-
-            px_py = world_to_pixel(lm["x"], lm["y"])
-            if px_py:
-                if lm["color"] == "RED":
-                    red_objs.append((dist, px_py))
-                elif lm["color"] == "GREEN":
-                    if not ignore_green:
-                        green_objs.append((dist, px_py))
-                elif lm["color"] == "YELLOW":
-                    # EĞER ignore_yellow=True İSE SARIYI DUVAR YAPMA
-                    if not ignore_yellow:
-                        # Sarı şamandıra nokta engeldir
-                        black_obstacles.append(px_py)
-                elif lm["color"] == "BLACK":
-                    black_obstacles.append(px_py)
-
-    # Duvar Örme
-    def draw_smart_fence(objects_list, img_map):
-        if len(objects_list) < 2: return
-        objects_list.sort(key=lambda x: x[0])
-        points = [item[1] for item in objects_list]
-        for i in range(len(points) - 1):
-            p1 = points[i]
-            p2 = points[i + 1]
-            dist_px = math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
-            MAX_GAP_PX = int(8.0 / COSTMAP_RES_M_PER_PX)
-            if dist_px < MAX_GAP_PX:
-                cv2.line(img_map, p1, p2, 0, 4)
-
-    draw_smart_fence(red_objs, nav_map)
-    draw_smart_fence(green_objs, nav_map)
-
-    # Siyah (ve engel durumundaki Sarı) Nokta Engeller
-    for obs_px in black_obstacles:
-        cv2.circle(nav_map, obs_px, 10, 0, -1)
-
     # Şişirme
     obstacles_mask = (nav_map < 100).astype(np.uint8) * 255
     inflation_m = getattr(cfg, 'INFLATION_MARGIN_M', 0.25)
@@ -519,64 +416,17 @@ def setup_lidar():
         print(f"!!! LIDAR'a bağlanılamadı: {e}", file=sys.stderr)
         return False  # Başarısız
 
-def select_mission_target(robot_x, robot_y, landmarks, robot_yaw, nav_map=None, gps_target_angle_err=None):
+def select_mission_target(robot_x, robot_y, robot_yaw, nav_map=None, gps_target_angle_err=None):
     """
     VISON MANTIĞI ENTEGRELİ GPS SÜRÜŞÜ
-
-    Mantık Hiyerarşisi:
-    1. KAMERA (Vision): Şamandıra görüyorsam GPS'i EZERİM. Vision modundaki gibi kapı/yan geçiş yaparım.
-    2. GPS (Pusula): Şamandıra görmüyorsam, GPS açısına göre sanal bir hedef koyarım.
-    3. A* (Planlama): Seçilen hedef neresi olursa olsun, haritadaki engellerden kaçarak rota çizerim.
     """
 
     # -------------------------------------------------------------------------
-    # 1. VISION TARAMASI (Parkur İçi Mantığı)
+    # 1. VISION TARAMASI (KALDIRILDI - SADECE GPS)
     # -------------------------------------------------------------------------
-    reds = []
-    greens = []
-
-    if landmarks:
-        for lm in landmarks:
-            # Sadece güvenilir ve YAKIN (Parkur içindeki) şamandıraları al
-            if lm["confidence"] < 1: continue
-            dist = math.sqrt((lm["x"] - robot_x) ** 2 + (lm["y"] - robot_y) ** 2)
-
-            # Vision modundaki gibi sadece yakın çevreyi (10m) dikkate al
-            if dist > 10.0: continue
-
-            if lm["color"] == "RED":
-                reds.append((dist, lm["x"], lm["y"]))
-            elif lm["color"] == "GREEN":
-                greens.append((dist, lm["x"], lm["y"]))
-
-    reds.sort(key=lambda k: k[0])
-    greens.sort(key=lambda k: k[0])
-
     visual_target_x = None
     visual_target_y = None
     target_type = "NONE"
-
-    # --- AYNI VISION MODUNDAKİ SENARYOLAR ---
-
-    # A) ÇİFT KAPI (Kırmızı + Yeşil) -> Ortasına Git
-    if reds and greens:
-        visual_target_x = (reds[0][1] + greens[0][1]) / 2.0
-        visual_target_y = (reds[0][2] + greens[0][2]) / 2.0
-        target_type = "VISUAL_GATE"
-
-    # B) TEK KIRMIZI -> Sağından geç (+2.5m Yanal Kayma)
-    elif reds:
-        # Şamandıranın koordinatını alıp yanal kaydırma yapıyoruz
-        # Basit matematik: Şamandıraya gitme, yanına git.
-        visual_target_x = reds[0][1]
-        visual_target_y = reds[0][2] - 1.6  # Y ekseninde kaydır (Basit yaklaşım)
-        target_type = "VISUAL_RED_SIDE"
-
-    # C) TEK YEŞİL -> Solundan geç (+2.5m Yanal Kayma)
-    elif greens:
-        visual_target_x = greens[0][1]
-        visual_target_y = greens[0][2] + 1.6
-        target_type = "VISUAL_GREEN_SIDE"
 
     # -------------------------------------------------------------------------
     # 2. HEDEF BELİRLEME (Karar Anı)
@@ -1290,7 +1140,7 @@ def main():
                 results = model(frame, conf=conf_val, verbose=False)[0]
                 detections = sv.Detections.from_ultralytics(results)
 
-                #  SENSOR FUSION & LANDMARK MAPPING (YENİ EKLENECEK)
+                #  SENSOR FUSION
                 # -----------------------------------------------------------------
 
                 # Sadece harita hazırsa ve tespit varsa çalışır
@@ -1412,12 +1262,6 @@ def main():
                                                 print(
                                                     f"[BUOY CONFIRMED] {color_label} Dist:{d_scan:.1f}m Ratio:{obstacle_ratio:.2f}")
                                             break
-
-                                            # Doğrulandıysa koordinatı güncelle ve hafızaya at
-                        if is_verified_by_lidar:
-                            obj_world_x = best_verified_x
-                            obj_world_y = best_verified_y
-                            update_landmark_memory(color_label, obj_world_x, obj_world_y)
 
                 # Çizimleri yap (Yayın için)
                 if getattr(cfg, 'STREAM', False) or getattr(cfg, 'RECORD_VIDEO', False):
@@ -1856,8 +1700,6 @@ def main():
                                     found_green_y = robot_y + (dist_m * math.sin(obj_global_angle))
 
                                     found_green_live = True
-                                    # Plot on map (update its position)
-                                    update_landmark_memory("GREEN", found_green_x, found_green_y)
                                     break
 
                     if found_green_live:
@@ -2040,19 +1882,6 @@ def main():
                             task3_gate_found = True
                             print(f"{Fore.GREEN}[TASK3] GATE CONFIRMED (CAMERA){Style.RESET_ALL}")
 
-                    # 3. Gate Check (Map Landmarks)
-                    if not task3_gate_found and landmarks_memory:
-                        r_found = False
-                        g_found = False
-                        for lm in landmarks_memory:
-                            d = math.sqrt((lm["x"] - robot_x)**2 + (lm["y"] - robot_y)**2)
-                            if d < 10.0:
-                                if lm["color"] == "RED": r_found = True
-                                if lm["color"] == "GREEN": g_found = True
-                        if r_found and g_found:
-                             task3_gate_found = True
-                             print(f"{Fore.GREEN}[TASK3] GATE CONFIRMED (MAP){Style.RESET_ALL}")
-
                     # Check Arrival
                     dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
                     if dist_to_wp < 2.0:
@@ -2076,11 +1905,29 @@ def main():
                 elif mevcut_gorev == "TASK3_SEARCH_PATTERN":
                     # Circular search (2m diameter, 2 laps)
                     yellow_obj = None
-                    if landmarks_memory:
-                         for lm in landmarks_memory:
-                             if lm["color"] == "YELLOW":
-                                 yellow_obj = lm
-                                 break
+                    # Canlı tespit varsa kullan (Landmarks Memory kaldırıldı)
+                    if detections:
+                        cids = detections.class_id.tolist()
+                        coords = detections.xyxy.tolist()
+                        for i, cid in enumerate(cids):
+                            # ID 9 = YELLOW BUOY (Varsayım)
+                            if cid == 9:
+                                x1, y1, x2, y2 = map(int, coords[i])
+                                cx = int((x1 + x2) / 2)
+                                box_h = y2 - y1
+                                target_cy = int(y2 - (box_h * 0.15))
+                                cy = max(0, min(target_cy, height - 1))
+                                err, dist_m = depth.get_value(cx, cy)
+                                if not np.isnan(dist_m) and not np.isinf(dist_m) and dist_m < 5.0:
+                                     hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
+                                     pixel_offset = (cx - (width / 2)) / width
+                                     angle_offset = -pixel_offset * hfov_rad
+                                     obj_global_angle = robot_yaw + angle_offset
+                                     yellow_obj = {
+                                         "x": robot_x + (dist_m * math.cos(obj_global_angle)),
+                                         "y": robot_y + (dist_m * math.sin(obj_global_angle))
+                                     }
+                                     break
 
                     if yellow_obj:
                          print(f"{Fore.GREEN}[TASK3] YELLOW OBJECT FOUND -> CIRCLING{Style.RESET_ALL}")
@@ -2342,14 +2189,14 @@ def main():
                                 else:
                                     # Fallback
                                     tx_world, ty_world, _ = select_mission_target(
-                                        robot_x, robot_y, landmarks_memory, robot_yaw, nav_map,
+                                        robot_x, robot_y, robot_yaw, nav_map,
                                         gps_target_angle_err=gps_angle
                                     )
                             else:
                                 # NORMAL MOD (Task 1, Task 2 Search, Task 3 Search vb.)
                                 hybrid_local_target = None # Reset
                                 tx_world, ty_world, _ = select_mission_target(
-                                    robot_x, robot_y, landmarks_memory, robot_yaw, nav_map,
+                                    robot_x, robot_y, robot_yaw, nav_map,
                                     gps_target_angle_err=gps_angle
                                 )
 
@@ -2532,6 +2379,55 @@ def main():
 
                             # DURUM 1: Zorla Hizalama veya Temiz Rota (Direct Drive)
                             if should_force_alignment or (path_is_clear and tx_world is not None):
+
+                                # --- REACTIVE AVOIDANCE (VISION/LIDAR INTEGRATION) ---
+                                is_avoiding = False
+
+                                # Sadece belirli görevlerde veya genel olarak?
+                                # Kullanıcı isteği: TASK1, TASK2_START, TASK3_START, TASK6...
+                                # Bu blok zaten o görevler için çalışıyor.
+                                if center_danger:
+                                    is_avoiding = True
+                                    mod_durumu = "ACIL (KACIS)"
+                                    print(f"{Back.RED}[ACİL] ENGEL! Mesafe: {center_d:.2f}m (ALIGNMENT/DIRECT MODE){Style.RESET_ALL}")
+
+                                    # 1. SHOCK BRAKE
+                                    if not acil_durum_aktif_mi:
+                                        print(" -> [KORUMA] ŞOK FREN!")
+                                        shock_pwm = 250
+                                        controller.set_servo(cfg.SOL_MOTOR, 1500 - shock_pwm)
+                                        controller.set_servo(cfg.SAG_MOTOR, 1500 - shock_pwm)
+                                        time.sleep(0.1)
+                                        acil_durum_aktif_mi = True
+
+                                    escape_gucu = getattr(cfg, 'ESCAPE_PWM', 300)
+
+                                    # 2. MICRO REVERSE (ESCAPE)
+                                    print(f" -> [MANEVRA] Anlık Geri Sekme...")
+                                    pwm_sol = 1500 - escape_gucu
+                                    pwm_sag = 1500 - escape_gucu
+                                    controller.set_servo(cfg.SOL_MOTOR, int(pwm_sol))
+                                    controller.set_servo(cfg.SAG_MOTOR, int(pwm_sag))
+                                    time.sleep(0.4)
+
+                                    # 3. TURN TO CLEAR SIDE
+                                    turn_power = 200
+                                    if left_d > right_d:
+                                        print(f" -> [MANEVRA] Sol Boş ({left_d:.1f}m) -> SOLA TANK DÖNÜŞÜ")
+                                        controller.set_servo(cfg.SOL_MOTOR, 1500 - turn_power)
+                                        controller.set_servo(cfg.SAG_MOTOR, 1500 + turn_power)
+                                    else:
+                                        print(f" -> [MANEVRA] Sağ Boş ({right_d:.1f}m) -> SAĞA TANK DÖNÜŞÜ")
+                                        controller.set_servo(cfg.SOL_MOTOR, 1500 + turn_power)
+                                        controller.set_servo(cfg.SAG_MOTOR, 1500 - turn_power)
+                                    time.sleep(0.3)
+
+                                else:
+                                    acil_durum_aktif_mi = False
+
+                                if is_avoiding:
+                                    continue # Döngü başa döner, aşağıdaki standart kodlar çalışmaz.
+
                                 # 1. Vision Scan ve Bearing Hesabı (Mevcut kodunuzdaki gibi)
                                 visual_bearing = None
                                 best_red = None
@@ -2860,37 +2756,7 @@ def main():
                                 map_display = cv2.resize(map_display, (disp_size, disp_size))
 
                                 # -----------------------------------------------------------
-                                # YENİ EKLENEN KISIM: HAFIZADAKİ ŞAMANDIRALARI ÇİZ
-                                # -----------------------------------------------------------
-                                # ROI (Kesilen parça) boyutu ile Ekran boyutu arasındaki oran
-                                # x2-x1: Kesilen parçanın orijinal genişliği
-                                roi_w = x2 - x1
-                                roi_h = y2 - y1
-
-                                if roi_w > 0 and roi_h > 0:
-                                    scale_x = disp_size / roi_w
-                                    scale_y = disp_size / roi_h
-
-                                    for lm in landmarks_memory:
-                                        # Sadece güvenilir olanları çiz
-                                        if lm["confidence"] >= 1:
-                                            g_px = world_to_pixel(lm["x"], lm["y"])  # Global pikseli al
-
-                                            if g_px:
-                                                # Lokal ROI koordinatına çevir:
-                                                # (Global_Piksel - Kesim_Baslangici) * Ölçek
-                                                roi_x = int((g_px[0] - x1) * scale_x)
-                                                roi_y = int((g_px[1] - y1) * scale_y)
-
-                                                # Eğer bu şamandıra şu anki mini harita ekranına sığıyorsa çiz
-                                                if 0 <= roi_x < disp_size and 0 <= roi_y < disp_size:
-                                                    l_color = (0, 255, 0) if lm["color"] == "GREEN" else (0, 0, 255)
-
-                                                    # Şamandıra Çemberi
-                                                    cv2.circle(map_display, (roi_x, roi_y), 6, l_color, 2)
-                                                    # ID Numarası (Beyaz renkli)
-                                                    cv2.putText(map_display, str(lm["id"]), (roi_x + 5, roi_y + 5),
-                                                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                                # YENİ EKLENEN KISIM: HAFIZADAKİ ŞAMANDIRALARI ÇİZ (KALDIRILDI)
                                 # -----------------------------------------------------------
 
                                 # Robotun Merkezi ve Oku
