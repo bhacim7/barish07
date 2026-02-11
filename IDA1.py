@@ -312,6 +312,46 @@ def update_landmark_memory(color_type, obj_world_x, obj_world_y):
         # Debug için yazdırabilirsin
         # print(f"[HAFIZA] YENİ {color_type} ŞAMANDIRA (ID: {landmark_id_counter}) X:{obj_world_x:.1f} Y:{obj_world_y:.1f}")
 
+def execute_reactive_avoidance(controller, cfg, center_d, left_d, right_d):
+    """
+    Executes the reactive avoidance maneuver (Shock Brake -> Reverse -> Turn).
+    Used in both Vision and GPS modes for emergency obstacle avoidance.
+    """
+    print(f"[ACİL] ENGEL! Mesafe: {center_d:.2f}m")
+
+    # --- 1. ADIM: ŞOK FREN (MOMENTUMU ÖLDÜR) ---
+    print(" -> [KORUMA] ŞOK FREN!")
+    shock_pwm = 250
+    controller.set_servo(cfg.SOL_MOTOR, 1500 - shock_pwm)
+    controller.set_servo(cfg.SAG_MOTOR, 1500 - shock_pwm)
+    time.sleep(0.1)
+
+    escape_gucu = getattr(cfg, 'ESCAPE_PWM', 300)
+
+    # --- 2. ADIM: KISA GERİ SEKME ---
+    print(f" -> [MANEVRA] Anlık Geri Sekme...")
+    pwm_sol = 1500 - escape_gucu
+    pwm_sag = 1500 - escape_gucu
+    controller.set_servo(cfg.SOL_MOTOR, int(pwm_sol))
+    controller.set_servo(cfg.SAG_MOTOR, int(pwm_sag))
+
+    # ÖNEMLİ: Sadece 0.4 saniye geri git.
+    time.sleep(0.4)
+
+    # --- 3. ADIM: KURTULMA MANEVRASI ---
+    turn_power = 200
+    if left_d > right_d:
+        print(f" -> [MANEVRA] Sol Boş ({left_d:.1f}m) -> SOLA TANK DÖNÜŞÜ")
+        controller.set_servo(cfg.SOL_MOTOR, 1500 - turn_power)
+        controller.set_servo(cfg.SAG_MOTOR, 1500 + turn_power)
+    else:
+        print(f" -> [MANEVRA] Sağ Boş ({right_d:.1f}m) -> SAĞA TANK DÖNÜŞÜ")
+        controller.set_servo(cfg.SOL_MOTOR, 1500 + turn_power)
+        controller.set_servo(cfg.SAG_MOTOR, 1500 - turn_power)
+
+    # Dönüşün gerçekleşmesi için kısa bir süre tanı
+    time.sleep(0.3)
+
 
 def lidar_thread_func():
     """
@@ -1443,57 +1483,12 @@ def main():
                 # A) ACİL DURUM (LIDAR - REFLEKS KAÇIŞ VE YÖN DEĞİŞTİRME)
                 if center_danger:
                     mod_durumu = "ACIL (KACIS MANEVRASI)"
-                    print(f"[ACİL] ENGEL! Mesafe: {center_d:.2f}m")
+                    execute_reactive_avoidance(controller, cfg, center_d, left_d, right_d)
 
-                    # --- 1. ADIM: ŞOK FREN (MOMENTUMU ÖLDÜR) ---
-                    if not acil_durum_aktif_mi:
-                        print(" -> [KORUMA] ŞOK FREN!")
-                        # Ters güç vererek zınk diye durdur
-                        shock_pwm = 250
-                        controller.set_servo(cfg.SOL_MOTOR, 1500 - shock_pwm)
-                        controller.set_servo(cfg.SAG_MOTOR, 1500 - shock_pwm)
-                        time.sleep(0.1)  # Çok kısa fren
-                        acil_durum_aktif_mi = True
-
-                        # Vision hafızasını sil (Çünkü yönümüzü zorla değiştireceğiz)
-                        last_vision_time = 0
-                        vision_lock_active = False
-
-                    escape_gucu = getattr(cfg, 'ESCAPE_PWM', 300)
-
-                    # --- 2. ADIM: KISA GERİ SEKME (REFLEKS) ---
-                    # Sürekli geri gitmek yerine sadece anlık bir kaçış yapıyoruz.
-                    print(f" -> [MANEVRA] Anlık Geri Sekme...")
-
-                    # Sol motor dengesizliği varsa buradaki katsayıyı kullan, yoksa sil.
-                    pwm_sol = 1500 - escape_gucu
-                    pwm_sag = 1500 - escape_gucu
-
-                    controller.set_servo(cfg.SOL_MOTOR, int(pwm_sol))
-                    controller.set_servo(cfg.SAG_MOTOR, int(pwm_sag))
-
-                    # ÖNEMLİ: Sadece 0.4 saniye geri git.
-                    # Bu sayede robot parkurun başına kadar geri gitmez, sadece açılır.
-                    time.sleep(0.4)
-
-                    # --- 3. ADIM: KURTULMA MANEVRASI (YÖN DEĞİŞTİR) ---
-                    # Geri geldik, şimdi burnumuzu engelden çevirmeliyiz.
-                    turn_power = 200  # Dönüş sertliği
-
-                    # Lidar verisine bak: Hangi taraf daha boş?
-                    if left_d > right_d:
-                        print(f" -> [MANEVRA] Sol Boş ({left_d:.1f}m) -> SOLA TANK DÖNÜŞÜ")
-                        # Sol Geri, Sağ İleri (Olduğu yerde sola dön)
-                        controller.set_servo(cfg.SOL_MOTOR, 1500 - turn_power)
-                        controller.set_servo(cfg.SAG_MOTOR, 1500 + turn_power)
-                    else:
-                        print(f" -> [MANEVRA] Sağ Boş ({right_d:.1f}m) -> SAĞA TANK DÖNÜŞÜ")
-                        # Sol İleri, Sağ Geri (Olduğu yerde sağa dön)
-                        controller.set_servo(cfg.SOL_MOTOR, 1500 + turn_power)
-                        controller.set_servo(cfg.SAG_MOTOR, 1500 - turn_power)
-
-                    # Dönüşün gerçekleşmesi için kısa bir süre tanı
-                    time.sleep(0.3)
+                    # Vision hafızasını sil (Çünkü yönümüzü zorla değiştireceğiz)
+                    last_vision_time = 0
+                    vision_lock_active = False
+                    acil_durum_aktif_mi = True
                 # B) NORMAL SEYİR (KAMERA) - ZED 3D DERİNLİK MODU
                 elif frame_hazir:
                     acil_durum_aktif_mi = False  # Tehlike geçti
@@ -2371,15 +2366,15 @@ def main():
                                 if tx_world is not None:
                                     # Determine Bias based on Task 2 Requirements
                                     planner_bias = 0.0
-                                    if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END", "TASK2_RETURN_MID",
-                                                        "TASK2_RETURN_ENTRY",
-                                                        "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
+                                    # Only enforce straight lines for Approach tasks, NOT Return tasks
+                                    if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END"]:
                                         planner_bias = 0.5  # High penalty for deviating from the straight line
 
                                     # Dynamic Cone for Circular Patterns
                                     current_cone = 45.0
+                                    # Allow full flexibility for Search patterns AND Return tasks (180 deg)
                                     if mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN",
-                                                        "TASK3_YELLOW_FOUND"]:
+                                                        "TASK3_YELLOW_FOUND"] or "RETURN" in mevcut_gorev:
                                         current_cone = 180.0
 
                                     new_path = planner.get_path_plan(
@@ -2532,6 +2527,16 @@ def main():
 
                             # DURUM 1: Zorla Hizalama veya Temiz Rota (Direct Drive)
                             if should_force_alignment or (path_is_clear and tx_world is not None):
+
+                                # --- YENİ: REAKTİF ENGEL KAÇINMA (LIDAR) ---
+                                # Eğer önümüzde aniden bir engel belirirse (center_danger),
+                                # A* rotasını iptal et ve anında dur. Bir sonraki döngüde yeniden planlama yapılacak.
+                                if center_danger and mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT",
+                                                                      "TASK2_START", "TASK3_START", "TASK6_SPEED", "TASK6_DOCK"]:
+                                    print(f"{Back.RED}[AVOID] ENGEL TESPİT EDİLDİ ({center_d:.2f}m)! REAKTİF KAÇIŞ...{Style.RESET_ALL}")
+                                    execute_reactive_avoidance(controller, cfg, center_d, left_d, right_d)
+                                    continue  # Restart loop
+
                                 # 1. Vision Scan ve Bearing Hesabı (Mevcut kodunuzdaki gibi)
                                 visual_bearing = None
                                 best_red = None
