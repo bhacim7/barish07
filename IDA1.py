@@ -776,6 +776,11 @@ def main():
     _active_wp_index = 0  # hangi waypointteyiz
     _waypoints_created = False
 
+    # --- TASK 2 STATIONARY ROTATION VARIABLES ---
+    task2_search_accumulated_yaw = 0.0
+    task2_search_prev_yaw = 0.0
+    task2_search_start_yaw = 0.0
+
     # --- YENİ LIDAR GÖSTERGE DEĞİŞKENLERİ ---
     lidar_min_dist_mm = 0.0
     lidar_avg_dist_mm = 0.0
@@ -1664,6 +1669,11 @@ def main():
                         task2_search_center_x = robot_x
                         task2_search_center_y = robot_y
 
+                        # Stationary Rotation Init
+                        task2_search_accumulated_yaw = 0.0
+                        task2_search_prev_yaw = magnetic_heading
+                        task2_search_start_yaw = magnetic_heading
+
                 elif mevcut_gorev == "TASK2_SEARCH_PATTERN":
                     # Search for Green Marker (Class ID 4) - Real-time Detection
                     # 2 Laps (8 phases) around task2_search_center_x,y
@@ -1740,29 +1750,28 @@ def main():
                             print(f"[TASK2] Verification Lost! Resetting counter.")
                         task2_green_verify_count = 0
 
-                        # Continue Pattern
-                        R = getattr(cfg, 'TASK2_SEARCH_DIAMETER', 2.0) / 2.0
-                        # 4 points per lap. 2 laps = 8 points.
-                        # Phase 0-3: Lap 1, Phase 4-7: Lap 2
+                        # STATIONARY ROTATION LOGIC
+                        if 'task2_search_accumulated_yaw' not in locals(): task2_search_accumulated_yaw = 0.0
+                        if 'task2_search_prev_yaw' not in locals(): task2_search_prev_yaw = magnetic_heading
+                        if 'task2_search_start_yaw' not in locals(): task2_search_start_yaw = magnetic_heading
 
-                        if task2_search_phase >= 8:
-                            print(f"{Fore.RED}[TASK2] MARKER NOT FOUND (TIMEOUT) -> RETURN HOME{Style.RESET_ALL}")
-                            mevcut_gorev = "TASK2_RETURN_HOME"
-                        else:
-                            # Calculate target point on circle
-                            # Angles: 0, 90, 180, 270 (deg) -> 0, pi/2, pi, 3pi/2
-                            phase_mod = task2_search_phase % 4
-                            angle_rad = phase_mod * (math.pi / 2.0)
+                        current_yaw = magnetic_heading
+                        # Check rotation
+                        if task2_search_prev_yaw is not None and current_yaw is not None:
+                            diff = nav.signed_angle_difference(task2_search_prev_yaw, current_yaw)
+                            task2_search_accumulated_yaw += abs(diff)
+                            task2_search_prev_yaw = current_yaw
 
-                            # Target point
-                            override_target_x = task2_search_center_x + (R * math.cos(angle_rad))
-                            override_target_y = task2_search_center_y + (R * math.sin(angle_rad))
+                        # Debug Print (Optional)
+                        # print(f"[TASK2] Rotating... Accumulated: {task2_search_accumulated_yaw:.1f}/360.0")
 
-                            # Check arrival
-                            dist_to_wp = math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2)
-                            if dist_to_wp < 1.0:
-                                print(f"[TASK2] Search Phase {task2_search_phase} Reached.")
-                                task2_search_phase += 1
+                        # Complete if > 320 deg AND heading matches start heading (within 15 deg)
+                        if task2_search_start_yaw is not None and current_yaw is not None:
+                             heading_diff = abs(nav.signed_angle_difference(task2_search_start_yaw, current_yaw))
+                             # Ensure minimum rotation (e.g., 300 deg) to avoid early finish if noise
+                             if task2_search_accumulated_yaw > 320.0 and heading_diff < 15.0:
+                                 print(f"{Fore.RED}[TASK2] 360 ROTATION COMPLETE -> RETURN HOME{Style.RESET_ALL}")
+                                 mevcut_gorev = "TASK2_RETURN_HOME"
 
                 elif mevcut_gorev == "TASK2_GREEN_MARKER_FOUND":
                      # Circle the object (2m radius, 2 laps)
@@ -2156,7 +2165,7 @@ def main():
 
                         # DURUM A: Manuel Override (Task 2 veya Task 3 Circling)
                         if (
-                                mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"]) and 'override_target_x' in locals():
+                                mevcut_gorev in ["TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN", "TASK3_YELLOW_FOUND"]) and 'override_target_x' in locals():
                             tx_world = override_target_x
                             ty_world = override_target_y
 
@@ -2527,6 +2536,14 @@ def main():
                                     sag = int(np.clip(fwd - corr, 1100, 1900))
                                     controller.set_servo(cfg.SOL_MOTOR, sol)
                                     controller.set_servo(cfg.SAG_MOTOR, sag)
+
+                            # --- TASK 2 STATIONARY ROTATION ---
+                            elif mevcut_gorev == "TASK2_SEARCH_PATTERN":
+                                # Force Spot Turn (Right / Clockwise)
+                                spot_pwm = getattr(cfg, 'SPOT_TURN_PWM', 200)
+                                controller.set_servo(cfg.SOL_MOTOR, 1500 + spot_pwm)
+                                controller.set_servo(cfg.SAG_MOTOR, 1500 - spot_pwm)
+                                acil_durum_aktif_mi = False
 
                             # --- STANDART A* SÜRÜŞÜ (TASK 1, 2, 3 - PLANNER VARSA) ---
                             elif current_path:
