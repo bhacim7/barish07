@@ -982,6 +982,9 @@ def main():
     prev_target_lon = None
     force_initial_alignment = False
 
+    # Return Home Flag
+    returning_home = False
+
     try:
         while True:
 
@@ -1722,8 +1725,30 @@ def main():
                         elif mevcut_gorev == "TASK1_STATE_MID":
                             mevcut_gorev = "TASK1_STATE_EXIT"
                         else:
-                            mevcut_gorev = "TASK2_START"
-                            print(f"{Fore.GREEN}[TASK1] Tamamlandı -> Task 2 Başlıyor (TASK2_START){Style.RESET_ALL}")
+                            if returning_home:
+                                print(f"{Fore.GREEN}[TASK1] REVERSE: EXIT REACHED -> GOING TO MID{Style.RESET_ALL}")
+                                mevcut_gorev = "TASK1_RETURN_MID"
+                            else:
+                                mevcut_gorev = "TASK2_START"
+                                print(f"{Fore.GREEN}[TASK1] Tamamlandı -> Task 2 Başlıyor (TASK2_START){Style.RESET_ALL}")
+
+                # --- TASK 1 REVERSE (RETURN HOME) ---
+                elif mevcut_gorev in ["TASK1_RETURN_MID", "TASK1_RETURN_ENTER"]:
+                    if mevcut_gorev == "TASK1_RETURN_MID":
+                        target_lat = cfg.T1_GATE_MID_LAT
+                        target_lon = cfg.T1_GATE_MID_LON
+                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                            print(f"{Fore.GREEN}[TASK1] REVERSE: MID REACHED -> GOING TO ENTER{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK1_RETURN_ENTER"
+
+                    elif mevcut_gorev == "TASK1_RETURN_ENTER":
+                        target_lat = cfg.T1_GATE_ENTER_LAT
+                        target_lon = cfg.T1_GATE_ENTER_LON
+                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                            print(f"{Fore.GREEN}[TASK1] REVERSE: ENTER REACHED -> MISSION COMPLETE{Style.RESET_ALL}")
+                            mission_started = False
+                            controller.set_servo(cfg.SOL_MOTOR, 1500)
+                            controller.set_servo(cfg.SAG_MOTOR, 1500)
 
                 # --- GÖREV 2: DEBRIS (ENGEL SAHASI) - STATE MACHINE ---
                 # STATES: TASK2_START -> GO_TO_MID -> GO_TO_END -> SEARCH_PATTERN -> GREEN_MARKER_FOUND -> RETURN_HOME
@@ -1973,10 +1998,16 @@ def main():
 
                     dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
                     if dist_to_wp < 2.0:
-                        print(f"{Fore.GREEN}[TASK3] GATE SEARCH REACHED -> GATE APPROACH{Style.RESET_ALL}")
-                        task3_success = False
-                        mevcut_gorev = "TASK3_GATE_APPROACH"
-                        task3_gate_found = False
+                        print(f"{Fore.GREEN}[TASK3] GATE SEARCH REACHED{Style.RESET_ALL}")
+
+                        if not getattr(cfg, 'ENABLE_TASK3', True):
+                            print(f"{Fore.YELLOW}[TASK3] Disabled in Config -> Skipping to Task 5{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK5_APPROACH"
+                        else:
+                            print(f"{Fore.GREEN}[TASK3] Enabled -> GATE APPROACH{Style.RESET_ALL}")
+                            task3_success = False
+                            mevcut_gorev = "TASK3_GATE_APPROACH"
+                            task3_gate_found = False
 
                 elif mevcut_gorev == "TASK3_GATE_APPROACH":
                     target_lat = cfg.T3_YELLOW_APPROACH_LAT
@@ -2138,11 +2169,17 @@ def main():
                     target_lon = cfg.T5_DOCK_APPROACH_LON
 
                     if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 4.0:
-                        print(
-                            f"{Fore.YELLOW}[GÖREV] Marina Girişine Varıldı -> KORİDORA GİRİLİYOR{Style.RESET_ALL}")
-                        mevcut_gorev = "TASK5_ENTER"
-                        # İçeri girerken GPS'i unutacağız, tamamen Lidar/Kör sürüş
-                        target_lat = None
+                        print(f"{Fore.YELLOW}[GÖREV] Marina Girişine Varıldı{Style.RESET_ALL}")
+
+                        if not getattr(cfg, 'ENABLE_TASK5', True):
+                            print(f"{Fore.YELLOW}[TASK5] Disabled -> Returning Home (Task 1 Reverse){Style.RESET_ALL}")
+                            returning_home = True
+                            mevcut_gorev = "TASK1_STATE_EXIT"
+                        else:
+                            print(f"{Fore.YELLOW}[GÖREV] Enabled -> KORİDORA GİRİLİYOR{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK5_ENTER"
+                            # İçeri girerken GPS'i unutacağız, tamamen Lidar/Kör sürüş
+                            target_lat = None
 
                         # AŞAMA 2: KORİDORDA İLERLE VE BOŞLUK ARA (SAĞ VEYA SOL)
                 elif mevcut_gorev == "TASK5_ENTER":
@@ -2208,10 +2245,10 @@ def main():
                     # (Timer 100'ü geçtiyse sürüş moduna geçilmiş demektir)
                     if 'task5_dock_timer' in globals() and task5_dock_timer > 80:
                         if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 4.0:
-                            print(f"{Fore.GREEN}[GÖREV] MARİNADAN ÇIKILDI -> GÖREVLER TAMAMLANDI.{Style.RESET_ALL}")
-                            mission_started = False  # Robotu Durdur
-                            controller.set_servo(cfg.SOL_MOTOR, 1500)
-                            controller.set_servo(cfg.SAG_MOTOR, 1500)
+                            print(f"{Fore.GREEN}[TASK5] Completed -> Returning Home (Task 1 Reverse){Style.RESET_ALL}")
+                            returning_home = True
+                            mevcut_gorev = "TASK1_STATE_EXIT"
+                            task5_dock_timer = 0
 
                 # --- GENEL NAVİGASYON HESABI ---
                 # Hangi görevde olursak olalım, target_lat belirlendiyse hesap yap.
