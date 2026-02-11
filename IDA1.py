@@ -2371,15 +2371,16 @@ def main():
                                 if tx_world is not None:
                                     # Determine Bias based on Task 2 Requirements
                                     planner_bias = 0.0
-                                    if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END", "TASK2_RETURN_MID",
-                                                        "TASK2_RETURN_ENTRY",
-                                                        "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
+                                    # Sadece ileri gidişlerde düz hat baskısı yap (Dönüşlerde serbest bırak)
+                                    if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END"]:
                                         planner_bias = 0.5  # High penalty for deviating from the straight line
 
-                                    # Dynamic Cone for Circular Patterns
+                                    # Dynamic Cone for Circular Patterns & Return Tasks
+                                    # Dönüş görevlerinde (Return) robotun arkasındaki hedefleri görebilmesi için koniyi genişletiyoruz.
                                     current_cone = 45.0
                                     if mevcut_gorev in ["TASK2_SEARCH_PATTERN", "TASK2_GREEN_MARKER_FOUND", "TASK3_SEARCH_PATTERN",
-                                                        "TASK3_YELLOW_FOUND"]:
+                                                        "TASK3_YELLOW_FOUND", "TASK2_RETURN_END", "TASK2_RETURN_MID",
+                                                        "TASK2_RETURN_ENTRY", "TASK3_RETURN_YELLOW", "TASK3_RETURN_ENTRY"]:
                                         current_cone = 180.0
 
                                     new_path = planner.get_path_plan(
@@ -2532,6 +2533,25 @@ def main():
 
                             # DURUM 1: Zorla Hizalama veya Temiz Rota (Direct Drive)
                             if should_force_alignment or (path_is_clear and tx_world is not None):
+
+                                # --- REAKTİF ENGEL KAÇINMA (YENİ) ---
+                                # Bearing/Heading takibi yaparken önüne engel çıkarsa (Vision modu gibi) kaçın.
+                                if center_danger and mevcut_gorev not in ["TASK5_ENTER", "TASK5_DOCK", "TASK5_EXIT"]:
+                                    print(f"{Back.RED}[REACTIVE] ENGEL TESPİT EDİLDİ! KAÇIŞ MANEVRASI{Style.RESET_ALL}")
+                                    turn_pwr = getattr(cfg, 'ESCAPE_PWM', 250)
+
+                                    if left_d > right_d:
+                                        # Sola Dön (Sol Geri, Sağ İleri)
+                                        controller.set_servo(cfg.SOL_MOTOR, 1500 - turn_pwr)
+                                        controller.set_servo(cfg.SAG_MOTOR, 1500 + turn_pwr)
+                                    else:
+                                        # Sağa Dön (Sol İleri, Sağ Geri)
+                                        controller.set_servo(cfg.SOL_MOTOR, 1500 + turn_pwr)
+                                        controller.set_servo(cfg.SAG_MOTOR, 1500 - turn_pwr)
+
+                                    # Döngüyü kırıp başa dön (Aşağıdaki bearing kodunu atla)
+                                    continue
+
                                 # 1. Vision Scan ve Bearing Hesabı (Mevcut kodunuzdaki gibi)
                                 visual_bearing = None
                                 best_red = None
