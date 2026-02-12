@@ -36,7 +36,6 @@ import socket, struct, pickle
 import pyaudio  # Ses kartına erişim için
 import numpy as np  # FFT matematiksel işlemleri için
 
-
 path_lost_time = None
 # --- TASK 6 (SESLİ KOMUT) İÇİN GLOBAL DEĞİŞKENLER ---
 task6_interrupt_request = None  # Eğer ses duyulursa burası 3 veya 5 olacak.
@@ -375,6 +374,7 @@ def get_hybrid_point(robot_x, robot_y, robot_yaw, aci_farki, step_dist=2.0):
     ty = robot_y + (step_dist * math.sin(target_angle))
     return tx, ty
 
+
 def get_inflated_nav_map(raw_costmap, ignore_green=False, ignore_yellow=False):  # <--- PARAMETRE EKLENDİ
     """
     A* için haritayı hazırlar.
@@ -396,6 +396,7 @@ def get_inflated_nav_map(raw_costmap, ignore_green=False, ignore_yellow=False): 
 
     return nav_map, inflated_obstacles
 
+
 def setup_lidar():
     """LIDAR'a bağlanır ve global nesneyi ayarlar."""
     global lidar_g
@@ -415,6 +416,7 @@ def setup_lidar():
     except Exception as e:
         print(f"!!! LIDAR'a bağlanılamadı: {e}", file=sys.stderr)
         return False  # Başarısız
+
 
 def select_mission_target(robot_x, robot_y, robot_yaw, nav_map=None, gps_target_angle_err=None):
     """
@@ -494,9 +496,6 @@ def select_mission_target(robot_x, robot_y, robot_yaw, nav_map=None, gps_target_
                                 break
 
     return final_x, final_y, target_type
-
-
-
 
 
 def pre_flight_check(zed_cam, controller_obj):
@@ -852,7 +851,7 @@ def main():
             try:
                 while True:
                     cmd = cmd_queue.get_nowait()
-                    
+
                     # --- KİMLİK KONTROLÜ ---
                     my_id = 1  # DİKKAT: İDA 2 kodunda burayı 2 yap!
                     incoming_id = cmd.get("target_id")
@@ -888,11 +887,11 @@ def main():
                             "GPS9": {"lat": float(getattr(cfg, "T3_RIGHT_LAT", 0.0)),
                                      "lon": float(getattr(cfg, "T3_RIGHT_LON", 0.0))},
                             "GPS10": {"lat": float(getattr(cfg, "T3_END_LAT", 0.0)),
-                                     "lon": float(getattr(cfg, "T3_END_LON", 0.0))},
+                                      "lon": float(getattr(cfg, "T3_END_LON", 0.0))},
                             "GPS11": {"lat": float(getattr(cfg, "T3_LEFT_LAT", 0.0)),
-                                     "lon": float(getattr(cfg, "T3_LEFT_LON", 0.0))},
+                                      "lon": float(getattr(cfg, "T3_LEFT_LON", 0.0))},
                             "GPS12": {"lat": float(getattr(cfg, "T5_DOCK_APPROACH_LAT", 0.0)),
-                                     "lon": float(getattr(cfg, "T5_DOCK_APPROACH_LON", 0.0))},
+                                      "lon": float(getattr(cfg, "T5_DOCK_APPROACH_LON", 0.0))},
                         }
 
                         hs = controller.get_horizontal_speed()
@@ -926,31 +925,42 @@ def main():
                         lat = cmd.get("lat")
                         lon = cmd.get("lon")
 
-
                         if idx == 1:
-                            cfg.T1_GATE_ENTER_LAT = lat; cfg.T1_GATE_ENTER_LON = lon
+                            cfg.T1_GATE_ENTER_LAT = lat;
+                            cfg.T1_GATE_ENTER_LON = lon
                         elif idx == 2:
-                            cfg.T1_GATE_MID_LAT = lat; cfg.T1_GATE_MID_LON = lon
+                            cfg.T1_GATE_MID_LAT = lat;
+                            cfg.T1_GATE_MID_LON = lon
                         elif idx == 3:
-                            cfg.T1_GATE_EXIT_LAT = lat; cfg.T1_GATE_EXIT_LON = lon
+                            cfg.T1_GATE_EXIT_LAT = lat;
+                            cfg.T1_GATE_EXIT_LON = lon
                         elif idx == 4:
-                            cfg.T2_ZONE_ENTRY_LAT = lat; cfg.T2_ZONE_ENTRY_LON = lon
+                            cfg.T2_ZONE_ENTRY_LAT = lat;
+                            cfg.T2_ZONE_ENTRY_LON = lon
                         elif idx == 5:
-                            cfg.T2_ZONE_MID_LAT = lat; cfg.T2_ZONE_MID_LON = lon
+                            cfg.T2_ZONE_MID_LAT = lat;
+                            cfg.T2_ZONE_MID_LON = lon
                         elif idx == 6:
-                            cfg.T2_ZONE_END_LAT = lat; cfg.T2_ZONE_END_LON = lon
+                            cfg.T2_ZONE_END_LAT = lat;
+                            cfg.T2_ZONE_END_LON = lon
                         elif idx == 7:
-                            cfg.T3_START_LAT = lat; cfg.T3_START_LON = lon
+                            cfg.T3_START_LAT = lat;
+                            cfg.T3_START_LON = lon
                         elif idx == 8:
-                            cfg.T3_MID_LAT = lat; cfg.T3_MID_LON = lon
+                            cfg.T3_MID_LAT = lat;
+                            cfg.T3_MID_LON = lon
                         elif idx == 9:
-                            cfg.T3_RIGHT_LAT = lat; cfg.T3_RIGHT_LON = lon
+                            cfg.T3_RIGHT_LAT = lat;
+                            cfg.T3_RIGHT_LON = lon
                         elif idx == 10:
-                            cfg.T3_END_LAT = lat; cfg.T3_END_LON = lon
+                            cfg.T3_END_LAT = lat;
+                            cfg.T3_END_LON = lon
                         elif idx == 11:
-                            cfg.T3_LEFT_LAT = lat; cfg.T3_LEFT_LON = lon
+                            cfg.T3_LEFT_LAT = lat;
+                            cfg.T3_LEFT_LON = lon
                         elif idx == 12:
-                            cfg.T5_DOCK_APPROACH_LAT = lat; cfg.T5_DOCK_APPROACH_LON = lon
+                            cfg.T5_DOCK_APPROACH_LAT = lat;
+                            cfg.T5_DOCK_APPROACH_LON = lon
 
                         print(f"[GPS] Güncellendi: Nokta {idx}")
 
@@ -985,8 +995,6 @@ def main():
             # Robot ne yaparsa yapsın, eğer arka plandaki kulak (thread) bir şey duyarsa
             # burası devreye girer ve görevi zorla değiştirir.
 
-
-
             if task6_interrupt_request is not None:
                 # Ses thread'inden bir emir geldi!
                 detected_task = task6_interrupt_request
@@ -997,7 +1005,8 @@ def main():
 
                 # 1. GÖREVİ DEĞİŞTİR
                 if detected_task == 3:
-                    if mevcut_gorev in ["T3_START", "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID", "T3_RETURN_START"]:
+                    if mevcut_gorev in ["T3_START", "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID",
+                                        "T3_RETURN_START"]:
                         son_gorev = "T3_START"
                     elif mevcut_gorev in ["TASK5_APPROACH", "TASK5_ENTER", "TASK5_DOCK", "TASK5_EXIT"]:
                         son_gorev = "TASK5_APPROACH"
@@ -1006,7 +1015,8 @@ def main():
                     print(f"{Fore.YELLOW}>> ROTA GÜNCELLENDİ: TASK 3 (ACİL DURUM NOKTASI){Style.RESET_ALL}")
 
                 elif detected_task == 5:
-                    if mevcut_gorev in ["T3_START", "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID", "T3_RETURN_START"]:
+                    if mevcut_gorev in ["T3_START", "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID",
+                                        "T3_RETURN_START"]:
                         son_gorev = "T3_START"
                     elif mevcut_gorev in ["TASK5_APPROACH", "TASK5_ENTER", "TASK5_DOCK", "TASK5_EXIT"]:
                         son_gorev = "TASK5_APPROACH"
@@ -1026,7 +1036,6 @@ def main():
                 time.sleep(0.1)
                 continue  # continue diyerek aşağıdakileri (Lidar, Kamera vs) atla, yeni görevle baştan başla.
 
-
             # -----------------------------------------------------------------------------------------
             # 2. ORTAK VERİ ALMA: GPS (HATA DÜZELTME: EN BAŞA ALINDI)
             # -----------------------------------------------------------------------------------------
@@ -1036,7 +1045,6 @@ def main():
             target_lon = None
 
             # Bu satır artık mod fark etmeksizin her döngüde çalışacak.
-            
 
             # [EK GÜVENLİK] GPS verisi yoksa (None ise) telemetri hatası vermemesi için kontrol edilebilir
             # ancak utils.nfloat zaten None kontrolü yapıyor, o yüzden kod kırılmaz.
@@ -1130,9 +1138,9 @@ def main():
             # --- MAP DECAY (AGGRESSIVE CLEARING) ---
             # Every loop, brighten the map slightly to remove ghost obstacles
             if costmap_ready and costmap_img is not None:
-                 decay_amount = getattr(cfg, 'MAP_DECAY_AMOUNT', 0)
-                 if decay_amount > 0:
-                     costmap_img = cv2.add(costmap_img, decay_amount)
+                decay_amount = getattr(cfg, 'MAP_DECAY_AMOUNT', 0)
+                if decay_amount > 0:
+                    costmap_img = cv2.add(costmap_img, decay_amount)
 
             # (Güvenlik Önlemi) Tekne çok yatıksa (Dalga), lidar verisini boşalt.
             # Böylece "process_lidar_sectors" fonksiyonu önümüzde engel var sanıp ani fren yapmaz.
@@ -1617,7 +1625,8 @@ def main():
                                 mevcut_gorev = "TASK1_RETURN_MID"
                             else:
                                 mevcut_gorev = "TASK2_START"
-                                print(f"{Fore.GREEN}[TASK1] Tamamlandı -> Task 2 Başlıyor (TASK2_START){Style.RESET_ALL}")
+                                print(
+                                    f"{Fore.GREEN}[TASK1] Tamamlandı -> Task 2 Başlıyor (TASK2_START){Style.RESET_ALL}")
 
                 # --- TASK 1 REVERSE (RETURN HOME) ---
                 elif mevcut_gorev in ["TASK1_RETURN_MID", "TASK1_RETURN_ENTER"]:
@@ -1755,7 +1764,8 @@ def main():
                             task2_search_phase = closest_phase + 1
                             task2_circle_target_phase = task2_search_phase + 8
 
-                            print(f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Start Phase: {task2_search_phase}")
+                            print(
+                                f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Start Phase: {task2_search_phase}")
 
                             task2_search_laps = 0
                             task2_green_verify_count = 0
@@ -1782,65 +1792,64 @@ def main():
 
                         # Complete if > 320 deg AND heading matches start heading (within 15 deg)
                         if task2_search_start_yaw is not None and current_yaw is not None:
-                             heading_diff = abs(nav.signed_angle_difference(task2_search_start_yaw, current_yaw))
-                             # Ensure minimum rotation (e.g., 300 deg) to avoid early finish if noise
-                             if task2_search_accumulated_yaw > 320.0 and heading_diff < 15.0:
-                                 print(f"{Fore.RED}[TASK2] 360 ROTATION COMPLETE -> RETURN HOME{Style.RESET_ALL}")
-                                 mevcut_gorev = "TASK2_RETURN_HOME"
+                            heading_diff = abs(nav.signed_angle_difference(task2_search_start_yaw, current_yaw))
+                            # Ensure minimum rotation (e.g., 300 deg) to avoid early finish if noise
+                            if task2_search_accumulated_yaw > 320.0 and heading_diff < 15.0:
+                                print(f"{Fore.RED}[TASK2] 360 ROTATION COMPLETE -> RETURN HOME{Style.RESET_ALL}")
+                                mevcut_gorev = "TASK2_RETURN_HOME"
 
                 elif mevcut_gorev == "TASK2_GREEN_MARKER_FOUND":
-                     # Circle the object (2m radius, 2 laps)
-                     R = getattr(cfg, 'TASK2_SEARCH_DIAMETER', 2.0) / 2.0
-                     if 'task2_circle_target_phase' not in locals(): task2_circle_target_phase = task2_search_phase + 8
+                    # Circle the object (2m radius, 2 laps)
+                    R = getattr(cfg, 'TASK2_SEARCH_DIAMETER', 2.0) / 2.0
+                    if 'task2_circle_target_phase' not in locals(): task2_circle_target_phase = task2_search_phase + 8
 
-                     if task2_search_phase >= task2_circle_target_phase:
-                         print(f"{Fore.GREEN}[TASK2] OBJECT CIRCLED -> RETURN HOME{Style.RESET_ALL}")
-                         mevcut_gorev = "TASK2_RETURN_HOME"
-                     else:
-                         # 4 points per lap (0, 90, 180, 270 degrees)
-                         phase_mod = task2_search_phase % 4
-                         angle_rad = phase_mod * (math.pi / 2.0)
+                    if task2_search_phase >= task2_circle_target_phase:
+                        print(f"{Fore.GREEN}[TASK2] OBJECT CIRCLED -> RETURN HOME{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK2_RETURN_HOME"
+                    else:
+                        # 4 points per lap (0, 90, 180, 270 degrees)
+                        phase_mod = task2_search_phase % 4
+                        angle_rad = phase_mod * (math.pi / 2.0)
 
-                         # Calculate Target Point (Using LOCKED center)
-                         override_target_x = task2_circle_center_x + (R * math.cos(angle_rad))
-                         override_target_y = task2_circle_center_y + (R * math.sin(angle_rad))
+                        # Calculate Target Point (Using LOCKED center)
+                        override_target_x = task2_circle_center_x + (R * math.cos(angle_rad))
+                        override_target_y = task2_circle_center_y + (R * math.sin(angle_rad))
 
-                         # Distance Check
-                         dist_to_wp = math.sqrt((override_target_x - robot_x)**2 + (override_target_y - robot_y)**2)
+                        # Distance Check
+                        dist_to_wp = math.sqrt((override_target_x - robot_x) ** 2 + (override_target_y - robot_y) ** 2)
 
-                         # Debug Print (Required for diagnosis)
-                         print(f"[TASK2] Circling Phase {task2_search_phase} | Center:({task2_circle_center_x:.1f}, {task2_circle_center_y:.1f}) | Target:({override_target_x:.1f}, {override_target_y:.1f}) | Dist: {dist_to_wp:.2f}m")
+                        # Debug Print (Required for diagnosis)
+                        print(
+                            f"[TASK2] Circling Phase {task2_search_phase} | Center:({task2_circle_center_x:.1f}, {task2_circle_center_y:.1f}) | Target:({override_target_x:.1f}, {override_target_y:.1f}) | Dist: {dist_to_wp:.2f}m")
 
-                         if dist_to_wp < 1.5: # Increased tolerance to 1.5m to avoid stalling
-                             print(f"[TASK2] Object Circle Phase {task2_search_phase} Reached (Dist: {dist_to_wp:.2f}m).")
-                             task2_search_phase += 1
+                        if dist_to_wp < 1.5:  # Increased tolerance to 1.5m to avoid stalling
+                            print(
+                                f"[TASK2] Object Circle Phase {task2_search_phase} Reached (Dist: {dist_to_wp:.2f}m).")
+                            task2_search_phase += 1
 
-                             # --- TASK 1 REVERSE (RETURN HOME) ---
+                            # --- TASK 1 REVERSE (RETURN HOME) ---
                 elif mevcut_gorev == "TASK2_RETURN_HOME":
                     mevcut_gorev = "TASK2_RETURN_END"
 
-                elif mevcut_gorev in ["TASK2_RETURN_END","TASK2_RETURN_MID","TASK2_RETURN_ENTRY"]:
-                     if mevcut_gorev == "TASK2_RETURN_END":
-                         target_lat = cfg.T2_ZONE_END_LAT
-                         target_lon = cfg.T2_ZONE_END_LON
-                         if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
-                             print(f"{Fore.GREEN}[TASK2] REVERSE: END REACHED -> GOING TO MID{Style.RESET_ALL}")
-                             mevcut_gorev = "TASK2_RETURN_MID"
-                     elif mevcut_gorev == "TASK2_RETURN_MID":
-                         target_lat = cfg.T2_ZONE_MID_LAT
-                         target_lon = cfg.T2_ZONE_MID_LON
-                         if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
-                             print(f"{Fore.GREEN}[TASK2] REVERSE: MID REACHED -> GOING TO ENTRY{Style.RESET_ALL}")
-                             mevcut_gorev = "TASK2_RETURN_ENTRY"
-                     elif mevcut_gorev == "TASK2_RETURN_ENTRY":
+                elif mevcut_gorev in ["TASK2_RETURN_END", "TASK2_RETURN_MID", "TASK2_RETURN_ENTRY"]:
+                    if mevcut_gorev == "TASK2_RETURN_END":
+                        target_lat = cfg.T2_ZONE_END_LAT
+                        target_lon = cfg.T2_ZONE_END_LON
+                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                            print(f"{Fore.GREEN}[TASK2] REVERSE: END REACHED -> GOING TO MID{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK2_RETURN_MID"
+                    elif mevcut_gorev == "TASK2_RETURN_MID":
+                        target_lat = cfg.T2_ZONE_MID_LAT
+                        target_lon = cfg.T2_ZONE_MID_LON
+                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
+                            print(f"{Fore.GREEN}[TASK2] REVERSE: MID REACHED -> GOING TO ENTRY{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK2_RETURN_ENTRY"
+                    elif mevcut_gorev == "TASK2_RETURN_ENTRY":
                         target_lat = cfg.T2_ZONE_ENTRY_LAT
                         target_lon = cfg.T2_ZONE_ENTRY_LON
                         if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
-                             print(f"{Fore.GREEN}[TASK2] REVERSE: ENTER REACHED -> GOING TO TASK3{Style.RESET_ALL}")
-                             mevcut_gorev = "TASK3_APPROACH"
-
-
-
+                            print(f"{Fore.GREEN}[TASK2] REVERSE: ENTER REACHED -> GOING TO TASK3{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK3_APPROACH"
 
                 # ---------------------------------------------------------------------
                 # TASK 3: SPEED CHALLENGE (TAM OTOMATİK)
@@ -1865,8 +1874,8 @@ def main():
                 # ---------------------------------------------------------------------
 
                 elif mevcut_gorev == "TASK3_APPROACH":
-                     # Start of Task 3 logic
-                     mevcut_gorev = "T3_START"
+                    # Start of Task 3 logic
+                    mevcut_gorev = "T3_START"
 
                 elif mevcut_gorev == "T3_START":
                     target_lat = cfg.T3_START_LAT
@@ -1939,8 +1948,8 @@ def main():
 
                     dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
                     if dist_to_wp < 2.0:
-                         print(f"{Fore.GREEN}[TASK3] RETURN MID REACHED -> RETURNING TO START{Style.RESET_ALL}")
-                         mevcut_gorev = "T3_RETURN_START"
+                        print(f"{Fore.GREEN}[TASK3] RETURN MID REACHED -> RETURNING TO START{Style.RESET_ALL}")
+                        mevcut_gorev = "T3_RETURN_START"
 
                 elif mevcut_gorev == "T3_RETURN_START":
                     target_lat = cfg.T3_START_LAT
@@ -1950,17 +1959,19 @@ def main():
                     if dist_to_wp < 2.0:
                         # Completion Check
                         if task3_gate_passed:
-                            print(f"{Fore.GREEN}[TASK3] COMPLETED SUCCESSFULLY (Gate Passed) -> TASK 5{Style.RESET_ALL}")
+                            print(
+                                f"{Fore.GREEN}[TASK3] COMPLETED SUCCESSFULLY (Gate Passed) -> TASK 5{Style.RESET_ALL}")
                             mevcut_gorev = "TASK5_APPROACH"
                         else:
                             task3_attempts += 1
                             if task3_attempts < 3:
-                                print(f"{Fore.YELLOW}[TASK3] RETRYING (Attempt {task3_attempts}/3) -> GOING TO MID{Style.RESET_ALL}")
+                                print(
+                                    f"{Fore.YELLOW}[TASK3] RETRYING (Attempt {task3_attempts}/3) -> GOING TO MID{Style.RESET_ALL}")
                                 mevcut_gorev = "T3_MID"
                             else:
-                                print(f"{Fore.RED}[TASK3] FAILED (Max Attempts) -> FORCING NEXT TASK (TASK 5){Style.RESET_ALL}")
+                                print(
+                                    f"{Fore.RED}[TASK3] FAILED (Max Attempts) -> FORCING NEXT TASK (TASK 5){Style.RESET_ALL}")
                                 mevcut_gorev = "TASK5_APPROACH"
-
 
                 # TASK 5: DOCKING (SAĞ/SOL BOŞLUK TARAMALI)
                 # ---------------------------------------------------------------------
@@ -2107,12 +2118,15 @@ def main():
                             gps_angle = aci_farki if 'aci_farki' in locals() else None
 
                             # --- HYBRID NAV LOGIC (STEP-SCAN-STEP) ---
-                            if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END","TASK2_RETURN_MID","TASK2_RETURN_ENTRY",
-                                                "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID", "T3_RETURN_START"]:
+                            if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END",
+                                                "TASK2_RETURN_MID", "TASK2_RETURN_ENTRY",
+                                                "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID",
+                                                "T3_RETURN_START"]:
                                 # 1. Mesafe Kontrolü (Hedeve vardık mı?)
                                 need_new_target = True
                                 if hybrid_local_target:
-                                    d_local = math.sqrt((hybrid_local_target[0] - robot_x)**2 + (hybrid_local_target[1] - robot_y)**2)
+                                    d_local = math.sqrt((hybrid_local_target[0] - robot_x) ** 2 + (
+                                                hybrid_local_target[1] - robot_y) ** 2)
                                     if d_local > 0.5:
                                         need_new_target = False  # Hala gidiyoruz
 
@@ -2136,7 +2150,7 @@ def main():
                                     )
                             else:
                                 # NORMAL MOD (Task 1, Task 2 Search, Task 3 Search vb.)
-                                hybrid_local_target = None # Reset
+                                hybrid_local_target = None  # Reset
                                 tx_world, ty_world, _ = select_mission_target(
                                     robot_x, robot_y, robot_yaw, nav_map,
                                     gps_target_angle_err=gps_angle
@@ -2160,9 +2174,11 @@ def main():
                                 if tx_world is not None:
                                     # Determine Bias based on Task 2 Requirements
                                     planner_bias = 0.0
-                                    if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END", "TASK2_RETURN_MID",
+                                    if mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END",
+                                                        "TASK2_RETURN_MID",
                                                         "TASK2_RETURN_ENTRY",
-                                                        "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID", "T3_RETURN_START"]:
+                                                        "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID",
+                                                        "T3_RETURN_START"]:
                                         planner_bias = 0.5  # High penalty for deviating from the straight line
 
                                     # Dynamic Cone for Circular Patterns
@@ -2292,20 +2308,22 @@ def main():
                                     if abs(aci_farki) > 5.0:
                                         should_force_alignment = True
                                     else:
-                                        force_initial_alignment = False # Alignment Complete
+                                        force_initial_alignment = False  # Alignment Complete
                                         # print("[NAV] Initial Alignment Complete.")
 
                             # B) Daima Hizalama Yapanlar (A* Kullanmaz, Sadece Heading/Pusula Sürüşü)
                             # TASK2_START burada kalsın ki start noktasındaki stabil davranışı korusun.
-                            if not force_initial_alignment: # Only check if not already forced
+                            if not force_initial_alignment:  # Only check if not already forced
                                 if mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT",
                                                     "TASK2_START", "T3_START", "TASK6_SPEED", "TASK6_DOCK"]:
                                     should_force_alignment = True
 
                                 # C) HİBRİT MOD (Önce Dön, Sonra A* Kullan) - Sizin istediğiniz kısım burası
                                 # TASK2 Mid ve End aşamalarında, eğer kafa çok dönükse önce düzeltecek.
-                                elif mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END", "TASK2_RETURN_MID", "TASK2_RETURN_ENTRY",
-                                                      "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID", "T3_RETURN_START"]:
+                                elif mevcut_gorev in ["TASK2_GO_TO_MID", "TASK2_GO_TO_END", "TASK2_RETURN_END",
+                                                      "TASK2_RETURN_MID", "TASK2_RETURN_ENTRY",
+                                                      "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID",
+                                                      "T3_RETURN_START"]:
                                     threshold = getattr(cfg, 'HYBRID_HEADING_THRESHOLD', 30.0)
                                     # Eğer açı farkı eşikten büyükse A*'ı bekleme, önce dön.
                                     if abs(aci_farki) > threshold:
@@ -2330,7 +2348,8 @@ def main():
                                 if center_danger:
                                     is_avoiding = True
                                     mod_durumu = "ACIL (KACIS)"
-                                    print(f"{Back.RED}[ACİL] ENGEL! Mesafe: {center_d:.2f}m (ALIGNMENT/DIRECT MODE){Style.RESET_ALL}")
+                                    print(
+                                        f"{Back.RED}[ACİL] ENGEL! Mesafe: {center_d:.2f}m (ALIGNMENT/DIRECT MODE){Style.RESET_ALL}")
 
                                     # 1. SHOCK BRAKE
                                     if not acil_durum_aktif_mi:
@@ -2367,14 +2386,14 @@ def main():
                                     acil_durum_aktif_mi = False
 
                                 if is_avoiding:
-                                    continue # Döngü başa döner, aşağıdaki standart kodlar çalışmaz.
+                                    continue  # Döngü başa döner, aşağıdaki standart kodlar çalışmaz.
 
                                 # 1. Vision Scan ve Bearing Hesabı (Mevcut kodunuzdaki gibi)
                                 visual_bearing = None
                                 best_red = None
                                 best_green = None
 
-                                if detections and mevcut_gorev.startswith("TASK1"):
+                                if detections and mevcut_gorev.startswith("TASK1") or mevcut_gorev == "T3_MID":
                                     coords = detections.xyxy.tolist()
                                     cids = detections.class_id.tolist()
                                     reds = []
@@ -2390,8 +2409,10 @@ def main():
                                         if np.isnan(dist_m) or np.isinf(dist_m) or dist_m > 10.0:
                                             continue
 
-                                        if cid in [0, 3, 5]: reds.append((dist_m, cx))
-                                        elif cid in [1, 4, 12]: greens.append((dist_m, cx))
+                                        if cid in [0, 3, 5]:
+                                            reds.append((dist_m, cx))
+                                        elif cid in [1, 4, 12]:
+                                            greens.append((dist_m, cx))
 
                                     if reds: best_red = min(reds, key=lambda x: x[0])
                                     if greens: best_green = min(greens, key=lambda x: x[0])
@@ -2452,10 +2473,10 @@ def main():
 
                                 if abs(heading_err) > threshold:
                                     # Spot Turn
-                                    if heading_err > 0: # Target Right
+                                    if heading_err > 0:  # Target Right
                                         controller.set_servo(cfg.SOL_MOTOR, 1500 + spot_pwm)
                                         controller.set_servo(cfg.SAG_MOTOR, 1500 - spot_pwm)
-                                    else: # Target Left
+                                    else:  # Target Left
                                         controller.set_servo(cfg.SOL_MOTOR, 1500 - spot_pwm)
                                         controller.set_servo(cfg.SAG_MOTOR, 1500 + spot_pwm)
                                 else:
@@ -2486,10 +2507,12 @@ def main():
                                 # Lidar verisi: center_danger, left_d, center_d, right_d (Yukarıda hesaplandı)
 
                                 # Sadece GPS modunda ve kör sürüşte değilsek (Task 5 hariç)
-                                if nav_mode == "GPS" and mevcut_gorev not in ["TASK5_ENTER", "TASK5_DOCK", "TASK5_EXIT"]:
+                                if nav_mode == "GPS" and mevcut_gorev not in ["TASK5_ENTER", "TASK5_DOCK",
+                                                                              "TASK5_EXIT"]:
                                     # --- REACTIVE LAYER (SAFETY) ---
                                     if center_danger:
-                                        print(f"{Back.RED}[AVOID] ENGEL TESPİT EDİLDİ ({center_d:.2f}m)! ROTA İPTAL -> YENİDEN HESAPLANIYOR...{Style.RESET_ALL}")
+                                        print(
+                                            f"{Back.RED}[AVOID] ENGEL TESPİT EDİLDİ ({center_d:.2f}m)! ROTA İPTAL -> YENİDEN HESAPLANIYOR...{Style.RESET_ALL}")
                                         controller.set_servo(cfg.SOL_MOTOR, 1500)
                                         controller.set_servo(cfg.SAG_MOTOR, 1500)
                                         current_path = None  # Rotayı sil -> Replan tetiklenir
@@ -2500,7 +2523,8 @@ def main():
 
                                 # HIZ AYARI: Task 3'te (Speed Challenge) daha hızlı git
                                 current_base_pwm = cfg.BASE_PWM
-                                if mevcut_gorev in ["T3_START", "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT", "T3_RETURN_MID", "T3_RETURN_START"]:
+                                if mevcut_gorev in ["T3_START", "T3_MID", "T3_RIGHT", "T3_END", "T3_LEFT",
+                                                    "T3_RETURN_MID", "T3_RETURN_START"]:
                                     current_base_pwm += getattr(cfg, "T3_SPEED_PWM", 100)
 
                                 # Get current speed for Dynamic Pure Pursuit
@@ -2536,7 +2560,6 @@ def main():
                                     pp_target = None
                                     prev_pp_target = None
 
-
                                 controller.set_servo(cfg.SOL_MOTOR, pp_sol)
                                 controller.set_servo(cfg.SAG_MOTOR, pp_sag)
                                 acil_durum_aktif_mi = False
@@ -2551,7 +2574,8 @@ def main():
                                 # Yol ilk defa kaybolduysa sayacı başlat ve motorları durdur (NEFES AL)
                                 if path_lost_time is None:
                                     path_lost_time = current_now
-                                    print(f"{Back.YELLOW}[PLANNER] Yol Kayıp -> Veri Bekleniyor (WAIT STATE)...{Style.RESET_ALL}")
+                                    print(
+                                        f"{Back.YELLOW}[PLANNER] Yol Kayıp -> Veri Bekleniyor (WAIT STATE)...{Style.RESET_ALL}")
                                     # Anında dur
                                     controller.set_servo(cfg.SOL_MOTOR, 1500)
                                     controller.set_servo(cfg.SAG_MOTOR, 1500)
@@ -2560,7 +2584,8 @@ def main():
                                 wait_duration = current_now - path_lost_time
 
                                 # Lidar verisini al (Her aşamada lazım)
-                                center_danger, left_d, center_d, right_d = process_lidar_sectors(local_lidar_scan, max_dist=10.0)
+                                center_danger, left_d, center_d, right_d = process_lidar_sectors(local_lidar_scan,
+                                                                                                 max_dist=10.0)
 
                                 # --- FAZ 0: BLIND DRIVE FALLBACK (GPS OR LOCAL) ---
                                 # If A* fails but we have a valid target (GPS or Local), just GO!
@@ -2582,7 +2607,8 @@ def main():
 
                                 if wait_duration < blind_drive_dur and active_angle_err is not None and center_d > blind_safe_dist:
                                     err_source = "GPS" if gps_angle is not None else "LOCAL"
-                                    print(f"{Back.RED}[FAILSAFE] BLIND {err_source} DRIVE (Err: {active_angle_err:.1f}){Style.RESET_ALL}")
+                                    print(
+                                        f"{Back.RED}[FAILSAFE] BLIND {err_source} DRIVE (Err: {active_angle_err:.1f}){Style.RESET_ALL}")
 
                                     # Simple P-Control
                                     kp_blind = 1.0
@@ -2604,7 +2630,8 @@ def main():
                                 # FAZ 2: MICRO ESCAPE / MİNİK KAÇIŞ
                                 # ---------------------------------------------------------
                                 elif wait_duration < (blind_drive_dur + 5.0):
-                                    print(f"{Fore.RED}[PLANNER] Yol Yok -> MICRO ESCAPE (Minik Adımlar){Style.RESET_ALL}")
+                                    print(
+                                        f"{Fore.RED}[PLANNER] Yol Yok -> MICRO ESCAPE (Minik Adımlar){Style.RESET_ALL}")
 
                                     # Yine de önümüz doluysa (Duvar dibindeysek) GİTME!
                                     if center_danger:
@@ -2617,28 +2644,31 @@ def main():
 
                                         # Yön düzeltme (Koridor mantığı - Eskisi gibi ama daha yumuşak)
                                         lidar_correction = 0
-                                        PUSH = 80 # İtme kuvvetini azalttık
+                                        PUSH = 80  # İtme kuvvetini azalttık
                                         if left_d < 2.0:
-                                            lidar_correction = +PUSH # Sağa it
+                                            lidar_correction = +PUSH  # Sağa it
                                         elif right_d < 2.0:
-                                            lidar_correction = -PUSH # Sola it
+                                            lidar_correction = -PUSH  # Sola it
 
                                         # Hedefe Dönme Girişimi (Varsa)
                                         target_corr = 0
                                         if gps_angle is not None:
-                                            target_corr = cfg.KpACI * gps_angle * 0.5 # Etkisini azalttık
+                                            target_corr = cfg.KpACI * gps_angle * 0.5  # Etkisini azalttık
 
                                         total_corr = (lidar_correction * 0.8) + (target_corr * 0.2)
 
                                         # Hafifçe motorlara güç ver
-                                        controller.set_servo(cfg.SOL_MOTOR, int(cfg.BASE_PWM + CREEP_SPEED + total_corr))
-                                        controller.set_servo(cfg.SAG_MOTOR, int(cfg.BASE_PWM + CREEP_SPEED - total_corr))
+                                        controller.set_servo(cfg.SOL_MOTOR,
+                                                             int(cfg.BASE_PWM + CREEP_SPEED + total_corr))
+                                        controller.set_servo(cfg.SAG_MOTOR,
+                                                             int(cfg.BASE_PWM + CREEP_SPEED - total_corr))
 
                                 # ---------------------------------------------------------
                                 # FAZ 3: FAIL SAFE / YERİNDE DÖNÜŞ (5.0+ Saniye)
                                 # ---------------------------------------------------------
                                 else:
-                                    print(f"{Back.MAGENTA}[ACİL] PLANNER ÇÖKTÜ -> YERİNDE DÖNÜŞ (FAIL SAFE){Style.RESET_ALL}")
+                                    print(
+                                        f"{Back.MAGENTA}[ACİL] PLANNER ÇÖKTÜ -> YERİNDE DÖNÜŞ (FAIL SAFE){Style.RESET_ALL}")
                                     # Artık ileri gitmek manasız, olduğu yerde dönerek yeni açı/yol ara
                                     # Sola doğru yavaş dönüş
                                     controller.set_servo(cfg.SOL_MOTOR, 1580)
