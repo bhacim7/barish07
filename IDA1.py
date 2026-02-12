@@ -36,6 +36,165 @@ import socket, struct, pickle
 import pyaudio  # Ses kartına erişim için
 import numpy as np  # FFT matematiksel işlemleri için
 
+
+
+
+
+#-------------------------------------- AŞAĞISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
+
+#-------------------------------------- AŞAĞISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
+#-------------------------------------- AŞAĞISI OBJE RAPORLAMA İÇİN -----------------------------------------
+telemetry_detected_objects = []
+# --- JÜRİ RAPORLAMA ENUMLARI (PROTO İLE AYNI OLMALI) ---
+class ProtoEnum:
+    # Object Type
+    OBJECT_UNKNOWN = 0
+    OBJECT_BOAT = 1
+    OBJECT_LIGHT_BEACON = 2
+    OBJECT_BUOY = 3
+
+    # Color
+    COLOR_UNKNOWN = 0
+    COLOR_YELLOW = 1
+    COLOR_BLACK = 2
+    COLOR_RED = 3
+    COLOR_GREEN = 4
+
+    # Task Type
+    TASK_UNKNOWN = 0
+    TASK_NONE = 1
+    TASK_ENTRY_EXIT = 2
+    TASK_NAV_CHANNEL = 3
+    TASK_SPEED_CHALLENGE = 4
+    TASK_OBJECT_DELIVERY = 5
+    TASK_DOCKING = 6
+    TASK_SOUND_SIGNAL = 7
+
+
+# --- GÖREV ÇEVİRİ SÖZLÜĞÜ ---
+TASK_CONTEXT_MAP = {
+    # Task 1
+    "TASK1_STATE_ENTER": ProtoEnum.TASK_NONE,
+    "TASK1_STATE_MID": ProtoEnum.TASK_ENTRY_EXIT,
+    "TASK1_STATE_EXIT": ProtoEnum.TASK_ENTRY_EXIT,
+    "TASK1_RETURN_MID": ProtoEnum.TASK_ENTRY_EXIT,
+    "TASK1_RETURN_ENTER": ProtoEnum.TASK_ENTRY_EXIT,
+    "FINISHED": ProtoEnum.TASK_NONE,
+    # Task 2
+    "TASK2_START": ProtoEnum.TASK_NONE,
+    "TASK2_GO_TO_MID": ProtoEnum.TASK_NAV_CHANNEL,
+    "TASK2_GO_TO_END": ProtoEnum.TASK_NAV_CHANNEL,
+    "TASK2_SEARCH_PATTERN": ProtoEnum.TASK_NAV_CHANNEL,
+    "TASK2_GREEN_MARKER_FOUND": ProtoEnum.TASK_NAV_CHANNEL,
+    "TASK2_RETURN_END": ProtoEnum.TASK_NAV_CHANNEL,
+    "TASK2_RETURN_MID": ProtoEnum.TASK_NAV_CHANNEL,
+    "TASK2_RETURN_ENTRY": ProtoEnum.TASK_NAV_CHANNEL,
+    # Task 3
+    "TASK3_START": ProtoEnum.TASK_NONE,
+    "T3_START": ProtoEnum.TASK_NONE,
+    "T3_MID": ProtoEnum.TASK_SPEED_CHALLENGE,
+    "T3_RIGHT": ProtoEnum.TASK_SPEED_CHALLENGE,
+    "T3_LEFT": ProtoEnum.TASK_SPEED_CHALLENGE,
+    "T3_END": ProtoEnum.TASK_SPEED_CHALLENGE,
+    "T3_RETURN_MID": ProtoEnum.TASK_SPEED_CHALLENGE,
+    "T3_RETURN_START": ProtoEnum.TASK_SPEED_CHALLENGE,
+    # Task 5
+    "TASK5_APPROACH": ProtoEnum.TASK_NONE,
+    "TASK5_ENTER": ProtoEnum.TASK_DOCKING,
+    "TASK5_DOCK": ProtoEnum.TASK_DOCKING,
+    "TASK5_EXIT": ProtoEnum.TASK_DOCKING,
+    # Task 6
+    "TASK6_SPEED": ProtoEnum.TASK_SOUND_SIGNAL,
+    "TASK6_DOCK": ProtoEnum.TASK_SOUND_SIGNAL
+}
+
+
+def calculate_obj_gps(lat1, lon1, dist_m, bearing_deg):
+    """
+    Mevcut GPS (lat1, lon1), Mesafe (m) ve Pusula Açısı (derece)
+    kullanarak hedef noktanın GPS koordinatını hesaplar.
+    """
+    R = 6378137.0  # Dünya yarıçapı
+    lat1_rad = math.radians(lat1)
+    lon1_rad = math.radians(lon1)
+    bearing_rad = math.radians(bearing_deg)
+
+    lat2_rad = math.asin(math.sin(lat1_rad) * math.cos(dist_m / R) +
+                         math.cos(lat1_rad) * math.sin(dist_m / R) * math.cos(bearing_rad))
+
+    lon2_rad = lon1_rad + math.atan2(math.sin(bearing_rad) * math.sin(dist_m / R) * math.cos(lat1_rad),
+                                     math.cos(dist_m / R) - math.sin(lat1_rad) * math.sin(lat2_rad))
+
+    return math.degrees(lat2_rad), math.degrees(lon2_rad)
+
+
+class ObjectMemoryManager:
+    def __init__(self):
+        # Format: [{'id': 1, 'lat': 0.0, 'lon': 0.0, 'type': 0, 'color': 0, 'last_seen': 0.0}]
+        self.memory = []
+        self.id_counter = 1
+        self.MERGE_DISTANCE = 2.0  # 2 metre içindekiler aynı obje sayılır
+
+    def update_and_get_id(self, lat, lon, obj_type, color):
+        current_time = time.time()
+        best_match = None
+        min_dist = float('inf')
+
+        # Hafızada eşleşme ara
+        for obj in self.memory:
+            # Haversine yerine basit öklid (kısa mesafede yeterli) veya nav.haversine
+            # Burası için basit pisagor yaklaşık metre hesabı (lat, lon farkından)
+            # 1 derece lat ~ 111km, 1 derece lon ~ 85km (Türkiye'de)
+            dy = (obj['lat'] - lat) * 111139
+            dx = (obj['lon'] - lon) * 85000  # Yaklaşık
+            dist = math.sqrt(dx * dx + dy * dy)
+
+            if dist < self.MERGE_DISTANCE:
+                if dist < min_dist:
+                    min_dist = dist
+                    best_match = obj
+
+        if best_match:
+            # Var olanı güncelle (Konum ortalaması alarak iyileştirme)
+            # %90 eski, %10 yeni (Jitter önleme)
+            best_match['lat'] = best_match['lat'] * 0.9 + lat * 0.1
+            best_match['lon'] = best_match['lon'] * 0.9 + lon * 0.1
+            best_match['last_seen'] = current_time
+            # Renk ve tip değişirse güncelle (güvenilirse)
+            return best_match['id'], best_match['lat'], best_match['lon']
+        else:
+            # Yeni obje oluştur
+            new_id = self.id_counter
+            self.id_counter += 1
+            self.memory.append({
+                'id': new_id,
+                'lat': lat,
+                'lon': lon,
+                'type': obj_type,
+                'color': color,
+                'last_seen': current_time
+            })
+            return new_id, lat, lon
+
+
+# Global Manager Nesnesi
+obj_manager = ObjectMemoryManager()
+#-------------------------------------- YUKARISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
+#-------------------------------------- YUKARISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
+#-------------------------------------- YUKARISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
+#-------------------------------------- YUKARISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
+#-------------------------------------- YUKARISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
+#-------------------------------------- YUKARISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
+#-------------------------------------- YUKARISI OBJE RAPORLAMA İÇİN -----------------------------------------
+
 path_lost_time = None
 # --- TASK 6 (SESLİ KOMUT) İÇİN GLOBAL DEĞİŞKENLER ---
 task6_interrupt_request = None  # Eğer ses duyulursa burası 3 veya 5 olacak.
@@ -865,6 +1024,9 @@ def main():
                     # --- DURUM 1: YER KONTROL "RAPOR VER" DEDİ Mİ? ---
                     if command_str == "report_status":
 
+                        # Global listeyi al
+                        global telemetry_detected_objects
+
                         # -- Payload Hazırlığı (Eski kodunun aynısı, buraya taşıdık) --
                         gps_points = {
                             "id": my_id,
@@ -908,6 +1070,7 @@ def main():
                             "trg_hdg": utils.nint(adviced_course) if 'adviced_course' in locals() else 0,
                             "hlth": magnetic_heading_state if 'magnetic_heading_state' in locals() else "UNKNOWN",
                             "task": mevcut_gorev,
+                            "objects": telemetry_detected_objects,  # Liste formatında gönderiyoruz
                             "MEVCUT_KONUM": {"lat": utils.nfloat(ida_enlem), "lon": utils.nfloat(ida_boylam)},
                             "dist": utils.nint(hedefe_mesafe) if 'hedefe_mesafe' in locals() else 0,
                             "mod": bool(manual_mode),
@@ -1182,7 +1345,7 @@ def main():
 
                     for i, cid in enumerate(cids):
                         color_label = "UNKNOWN"
-                        if cid in [0, 3, 5]:
+                        if cid in [0, 5]:
                             color_label = "RED"
                         elif cid in [1, 4, 12]:
                             color_label = "GREEN"
@@ -1190,6 +1353,10 @@ def main():
                             color_label = "BLACK"
                         elif cid == 9:
                             color_label = "YELLOW"
+                        elif cid == 3:
+                            color_label ="RED_INDICATOR"
+                        elif cid == 12:
+                            color_label = "GREEN_INDICATOR"
                         else:
                             continue
                         # 1. Kameradaki Konumu Bul
@@ -1290,6 +1457,83 @@ def main():
                                                 print(
                                                     f"[BUOY CONFIRMED] {color_label} Dist:{d_scan:.1f}m Ratio:{obstacle_ratio:.2f}")
                                             break
+
+# ---------------------------------- JÜRİ RAPORLAMA İÇİN OBJE ANALİZİ ------------------------------------------
+                current_frame_objects = []  # Bu karede tespit edilen ve raporlanacak objeler
+
+                if detections and magnetic_heading is not None and ida_enlem != 0:
+                    hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
+
+                    coords = detections.xyxy.tolist()
+                    cids = detections.class_id.tolist()
+
+                    for i, cid in enumerate(cids):
+                        # 1. Filtreleme ve Özellik Atama
+                        r_type = ProtoEnum.OBJECT_UNKNOWN
+                        r_color = ProtoEnum.COLOR_UNKNOWN
+
+                        # Type Belirleme
+                        if cid in [5, 9, 10, 12]:
+                            r_type = ProtoEnum.OBJECT_BUOY
+                        elif cid in [3, 4]:
+                            r_type = ProtoEnum.OBJECT_LIGHT_BEACON
+                        else:
+                            continue  # Raporlanmayacak obje
+
+                        # Renk Belirleme
+                        if cid in [3, 5]:
+                            r_color = ProtoEnum.COLOR_RED
+                        elif cid in [4, 12]:
+                            r_color = ProtoEnum.COLOR_GREEN
+                        elif cid == 9:
+                            r_color = ProtoEnum.COLOR_YELLOW
+                        elif cid == 10:
+                            r_color = ProtoEnum.COLOR_BLACK
+
+                        # 2. Konum Hesaplama
+                        x1, y1, x2, y2 = map(int, coords[i])
+                        cx = int((x1 + x2) / 2)
+                        cy = int((y2 + y1) / 2)  # Merkezden alalım
+
+                        # Derinlik al
+                        err, dist_m = depth.get_value(cx, cy)
+
+                        # Geçerli derinlik ve makul mesafe (15m altı)
+                        if not np.isnan(dist_m) and not np.isinf(dist_m) and 0.5 < dist_m < 15.0:
+
+                            # Açısal Sapma Hesapla
+                            pixel_offset = (cx - (width / 2)) / width
+                            angle_offset_rad = -pixel_offset * hfov_rad
+                            angle_offset_deg = math.degrees(angle_offset_rad)
+
+                            # Objenin Pusula Açısı (Heading + Offset)
+                            obj_bearing = (magnetic_heading + angle_offset_deg) % 360
+
+                            # GPS Hesapla
+                            obj_lat, obj_lon = calculate_obj_gps(ida_enlem, ida_boylam, dist_m,
+                                                                 obj_bearing)
+
+                            # 3. ID Yönetimi ve Kayıt
+                            final_id, f_lat, f_lon = obj_manager.update_and_get_id(obj_lat, obj_lon,
+                                                                                   r_type, r_color)
+
+                            # 4. Task Context Belirleme
+                            t_ctx = TASK_CONTEXT_MAP.get(mevcut_gorev, ProtoEnum.TASK_NONE)
+
+                            # Eğer TASK_NONE ise (örn: Başlangıçta), raporlama yapma
+                            if t_ctx != ProtoEnum.TASK_NONE:
+                                # Listeye ekle (Telemetriye gidecek)
+                                current_frame_objects.append({
+                                    "type": r_type,
+                                    "color": r_color,
+                                    "lat": f_lat,
+                                    "lon": f_lon,
+                                    "id": final_id,
+                                    "ctx": t_ctx
+                                })
+                global telemetry_detected_objects
+                telemetry_detected_objects = current_frame_objects  # Güncel karedeki objeleri at
+# ---------------------------------- yukarısı JÜRİ RAPORLAMA İÇİN OBJE ANALİZİ ------------------------------------------
 
                 # Çizimleri yap (Yayın için)
                 if getattr(cfg, 'STREAM', False) or getattr(cfg, 'RECORD_VIDEO', False):
