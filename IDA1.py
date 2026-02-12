@@ -3065,7 +3065,7 @@ def main():
                     adv_str = f"Rota: {adviced_course:.0f}" if 'adviced_course' in locals() else "Rota: -"
                     cv2.putText(stream_frame, adv_str, (x_pos, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 100, 255), 1)
 
-                    head_str = f"Head: {magnetic_heading:.0f}" if 'magnetic_heading' in locals() and magnetic_heading is not None else "Head: -"
+                    head_str = f"Head: {magnetic_heading:.0f}" if  magnetic_heading is not None else "Head: -"
                     cv2.putText(stream_frame, head_str, (x_pos, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1)
 
                     fix_str = f"GPS: {controller.get_gps_fix_type_verbose()}"
