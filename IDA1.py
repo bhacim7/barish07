@@ -1003,6 +1003,11 @@ def main():
     returning_home = False
     ida_enlem = 0.0
     ida_boylam = 0.0
+
+    # --- FAILSAFE STATE VARIABLES ---
+    failsafe_active = False
+    failsafe_start_time = 0
+
     try:
         while True:
             ida_enlem, ida_boylam = controller.get_current_position()
@@ -1531,7 +1536,7 @@ def main():
                                     "id": final_id,
                                     "ctx": t_ctx
                                 })
-                global telemetry_detected_objects
+                # global telemetry_detected_objects
                 telemetry_detected_objects = current_frame_objects  # Güncel karedeki objeleri at
 # ---------------------------------- yukarısı JÜRİ RAPORLAMA İÇİN OBJE ANALİZİ ------------------------------------------
 
@@ -2582,8 +2587,36 @@ def main():
                             # BLOĞU UYGULA
                             # -------------------------------------------------------------------------
 
+                            # --- FAILSAFE STATE MANAGEMENT ---
+                            current_now_fs = time.time()
+
+                            # 1. Activation Logic (Wait 5s -> Trigger)
+                            if current_path is None:
+                                if path_lost_time is None:
+                                    path_lost_time = current_now_fs
+                                elif (current_now_fs - path_lost_time) > 5.0:
+                                    if not failsafe_active:
+                                        print(f"{Back.RED}[FAILSAFE] GRACE PERIOD ENDED -> FORCE ALIGNMENT/DIRECT DRIVE{Style.RESET_ALL}")
+                                        failsafe_active = True
+                                        failsafe_start_time = current_now_fs
+
+                            # 2. Recovery Logic (Hysteresis - Minimum 4s)
+                            elif failsafe_active:
+                                # Path is back (current_path is not None), but are we done?
+                                if (current_now_fs - failsafe_start_time) > 4.0:
+                                    print(f"{Back.GREEN}[FAILSAFE] MANEUVER COMPLETE -> RESUMING A* NAVIGATION{Style.RESET_ALL}")
+                                    failsafe_active = False
+                                    path_lost_time = None
+                                else:
+                                    # Keep forcing alignment for stability
+                                    pass
+
+                            # 3. Normal Operation
+                            else:
+                                path_lost_time = None
+
                             # DURUM 1: Zorla Hizalama veya Temiz Rota (Direct Drive)
-                            if should_force_alignment or (path_is_clear and tx_world is not None):
+                            if should_force_alignment or (path_is_clear and tx_world is not None) or (failsafe_active and tx_world is not None):
 
                                 # --- REACTIVE AVOIDANCE (VISION/LIDAR INTEGRATION) ---
                                 is_avoiding = False
@@ -2745,7 +2778,7 @@ def main():
                                 acil_durum_aktif_mi = False
 
                             # --- STANDART A* SÜRÜŞÜ (TASK 1, 2, 3 - PLANNER VARSA) ---
-                            elif current_path:
+                            elif current_path and not failsafe_active:
 
                                 # --- YENİ: REAKTİF ENGEL KAÇINMA (LIDAR) ---
                                 # Eğer önümüzde aniden bir engel belirirse (center_danger),
@@ -2811,117 +2844,22 @@ def main():
                                 acil_durum_aktif_mi = False
 
 
-                            # --- PLAN B: AKILLI BEKLEME & MİNİK KAÇIŞ MODU (Yol Bulunamadı!) ---
+                            # --- PLAN B: GRACE PERIOD (WAIT) ---
                             else:
-                                # 1. ZAMANLAYICIYI KONTROL ET
+                                if path_lost_time is None: path_lost_time = time.time()
+                                wait_duration = time.time() - path_lost_time
 
-                                current_now = time.time()
-
-                                # Yol ilk defa kaybolduysa sayacı başlat ve motorları durdur (NEFES AL)
-                                if path_lost_time is None:
-                                    path_lost_time = current_now
+                                # Just Stop. The logic above handles the transition to Failsafe after 5s.
+                                if wait_duration < 5.0:
                                     print(
-                                        f"{Back.YELLOW}[PLANNER] Yol Kayıp -> Veri Bekleniyor (WAIT STATE)...{Style.RESET_ALL}")
-                                    # Anında dur
+                                        f"{Back.YELLOW}[PLANNER] PATH LOST -> GRACE PERIOD ({wait_duration:.1f}/5.0s) - STOP{Style.RESET_ALL}")
                                     controller.set_servo(cfg.SOL_MOTOR, 1500)
                                     controller.set_servo(cfg.SAG_MOTOR, 1500)
-
-                                # Ne kadar süredir bekliyoruz?
-                                wait_duration = current_now - path_lost_time
-
-                                # Lidar verisini al (Her aşamada lazım)
-                                center_danger, left_d, center_d, right_d = process_lidar_sectors(local_lidar_scan,
-                                                                                                 max_dist=10.0)
-
-                                # --- FAZ 0: BLIND DRIVE FALLBACK (GPS OR LOCAL) ---
-                                # If A* fails but we have a valid target (GPS or Local), just GO!
-                                blind_drive_dur = getattr(cfg, 'BLIND_DRIVE_SECONDS', 4.0)
-                                blind_safe_dist = getattr(cfg, 'BLIND_DRIVE_SAFE_DIST', 0.7)
-
-                                # Calculate Local Angle Error if GPS is not available but Local Target is
-                                local_angle_deg = None
-                                if gps_angle is None and tx_world is not None:
-                                    target_heading_rad = math.atan2(ty_world - robot_y, tx_world - robot_x)
-                                    alpha = target_heading_rad - robot_yaw
-                                    # Normalize to -pi..pi
-                                    alpha = (alpha + math.pi) % (2 * math.pi) - math.pi
-                                    # Convert to degrees and Negate for Right-Turn convention (Positive = Right)
-                                    local_angle_deg = -math.degrees(alpha)
-
-                                # Determine which angle to use
-                                active_angle_err = gps_angle if gps_angle is not None else local_angle_deg
-
-                                if wait_duration < blind_drive_dur and active_angle_err is not None and center_d > blind_safe_dist:
-                                    err_source = "GPS" if gps_angle is not None else "LOCAL"
-                                    print(
-                                        f"{Back.RED}[FAILSAFE] BLIND {err_source} DRIVE (Err: {active_angle_err:.1f}){Style.RESET_ALL}")
-
-                                    # Simple P-Control
-                                    kp_blind = 1.0
-                                    turn_val = np.clip(active_angle_err * kp_blind, -150, 150)
-                                    base_blind = cfg.BASE_PWM + 130
-
-                                    controller.set_servo(cfg.SOL_MOTOR, int(base_blind + turn_val))
-                                    controller.set_servo(cfg.SAG_MOTOR, int(base_blind - turn_val))
-
-
-                                # FAZ 1: BEKLE VE GÖZLEM YAP (Blind süresinden sonra)
-                                # ---------------------------------------------------------
-                                elif wait_duration < (blind_drive_dur + 2.0):
-                                    # Hiçbir şey yapma. Sensörlerin gürültüyü temizlemesine ve
-                                    # kameranın yeni bir kare yakalamasına izin ver.
-                                    pass
-
-                                # ---------------------------------------------------------
-                                # FAZ 2: MICRO ESCAPE / MİNİK KAÇIŞ
-                                # ---------------------------------------------------------
-                                elif wait_duration < (blind_drive_dur + 5.0):
-                                    print(
-                                        f"{Fore.RED}[PLANNER] Yol Yok -> MICRO ESCAPE (Minik Adımlar){Style.RESET_ALL}")
-
-                                    # Yine de önümüz doluysa (Duvar dibindeysek) GİTME!
-                                    if center_danger:
-                                        print(f"[ACİL] ESCAPE ENGELLENDİ! Ön Dolu ({center_d:.2f}m)")
-                                        controller.set_servo(cfg.SOL_MOTOR, 1500)
-                                        controller.set_servo(cfg.SAG_MOTOR, 1500)
-                                    else:
-                                        # ÇOK YAVAŞ İLERLE (Costmap hücresinden çıkmak için)
-                                        CREEP_SPEED = 40  # Eskiden 60 idi, şimdi daha temkinli
-
-                                        # Yön düzeltme (Koridor mantığı - Eskisi gibi ama daha yumuşak)
-                                        lidar_correction = 0
-                                        PUSH = 80  # İtme kuvvetini azalttık
-                                        if left_d < 2.0:
-                                            lidar_correction = +PUSH  # Sağa it
-                                        elif right_d < 2.0:
-                                            lidar_correction = -PUSH  # Sola it
-
-                                        # Hedefe Dönme Girişimi (Varsa)
-                                        target_corr = 0
-                                        if gps_angle is not None:
-                                            target_corr = cfg.KpACI * gps_angle * 0.5  # Etkisini azalttık
-
-                                        total_corr = (lidar_correction * 0.8) + (target_corr * 0.2)
-
-                                        # Hafifçe motorlara güç ver
-                                        controller.set_servo(cfg.SOL_MOTOR,
-                                                             int(cfg.BASE_PWM + CREEP_SPEED + total_corr))
-                                        controller.set_servo(cfg.SAG_MOTOR,
-                                                             int(cfg.BASE_PWM + CREEP_SPEED - total_corr))
-
-                                # ---------------------------------------------------------
-                                # FAZ 3: FAIL SAFE / YERİNDE DÖNÜŞ (5.0+ Saniye)
-                                # ---------------------------------------------------------
                                 else:
-                                    print(
-                                        f"{Back.MAGENTA}[ACİL] PLANNER ÇÖKTÜ -> YERİNDE DÖNÜŞ (FAIL SAFE){Style.RESET_ALL}")
-                                    # Artık ileri gitmek manasız, olduğu yerde dönerek yeni açı/yol ara
-                                    # Sola doğru yavaş dönüş
+                                    # Fallback for "No Target + No Path + Failsafe Active"
+                                    print(f"{Back.MAGENTA}[FAILSAFE] NO TARGET AVAILABLE -> SPINNING{Style.RESET_ALL}")
                                     controller.set_servo(cfg.SOL_MOTOR, 1580)
                                     controller.set_servo(cfg.SAG_MOTOR, 1420)
-
-                                # Konsola bilgi bas (Debug)
-                                # print(f"[AUTO] Path Len:{len(current_path)} Sol:{pp_sol} Sağ:{pp_sag}")
 
                             # --- GÖRSELLEŞTİRME (DEBUG) ---
                             vis_map = costmap_img.copy()
