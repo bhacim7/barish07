@@ -1641,10 +1641,12 @@ def main():
                         target_lat = cfg.T1_GATE_ENTER_LAT
                         target_lon = cfg.T1_GATE_ENTER_LON
                         if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 2.0:
-                            print(f"{Fore.GREEN}[TASK1] REVERSE: ENTER REACHED -> MISSION COMPLETE{Style.RESET_ALL}")
                             mission_started = False
-                            controller.set_servo(cfg.SOL_MOTOR, 1500)
-                            controller.set_servo(cfg.SAG_MOTOR, 1500)
+                            mevcut_gorev = "FINISHED"
+                elif mevcut_gorev == "FINISHED":
+                    print(f"{Fore.GREEN}[TASK1] REVERSE: ENTER REACHED -> MISSION COMPLETE{Style.RESET_ALL}")
+                    controller.set_servo(cfg.SOL_MOTOR, 1500)
+                    controller.set_servo(cfg.SAG_MOTOR, 1500)
 
                 # --- GÖREV 2: DEBRIS (ENGEL SAHASI) - STATE MACHINE ---
                 # STATES: TASK2_START -> GO_TO_MID -> GO_TO_END -> SEARCH_PATTERN -> GREEN_MARKER_FOUND -> RETURN_HOME
