@@ -126,11 +126,22 @@ else:
     T2_ZONE_END_LAT = 40.8089363
     T2_ZONE_END_LON = 29.2619269
 
-    # TASK 3: Speed Challenge (Sürat Kapısı)
-    T3_GATE_SEARCH_LAT = 40.8089735
-    T3_GATE_SEARCH_LON = 29.2620113
-    T3_YELLOW_APPROACH_LAT = 40.8089423
-    T3_YELLOW_APPROACH_LON = 29.2621796
+    # TASK 3: Speed Challenge (Sürat Kapısı) - REFACTORED
+    # Yeni 5 Noktali Sistem (Placeholders - Update with real GPS)
+    T3_START_LAT = 0.0
+    T3_START_LON = 0.0
+
+    T3_MID_LAT = 0.0
+    T3_MID_LON = 0.0
+
+    T3_RIGHT_LAT = 0.0
+    T3_RIGHT_LON = 0.0
+
+    T3_END_LAT = 0.0
+    T3_END_LON = 0.0
+
+    T3_LEFT_LAT = 0.0
+    T3_LEFT_LON = 0.0
 
     # TASK 5: Docking (Park Etme)
     T5_DOCK_APPROACH_LAT = 40.8632559
