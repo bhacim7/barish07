@@ -826,6 +826,7 @@ def main():
     global task5_dock_timer
     global path_lost_time
     global costmap_img, costmap_ready
+    global telemetry_detected_objects
 
     # --- KRİTİK BAŞLANGIÇ DEĞERLERİ (CRASH ÖNLEME) ---
     magnetic_heading = 0.0
@@ -1030,7 +1031,7 @@ def main():
                     if command_str == "report_status":
 
                         # Global listeyi al
-                        global telemetry_detected_objects
+                        # global telemetry_detected_objects
 
                         # -- Payload Hazırlığı (Eski kodunun aynısı, buraya taşıdık) --
                         gps_points = {
