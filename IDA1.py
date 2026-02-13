@@ -2617,7 +2617,8 @@ def main():
                                 path_lost_time = None
 
                             # DURUM 1: Zorla Hizalama veya Temiz Rota (Direct Drive)
-                            if should_force_alignment or (path_is_clear and tx_world is not None) or (failsafe_active and tx_world is not None):
+                            if (should_force_alignment or (path_is_clear and tx_world is not None) or (
+                                    failsafe_active and tx_world is not None)) and mevcut_gorev != "TASK2_SEARCH_PATTERN":
 
                                 # --- REACTIVE AVOIDANCE (VISION/LIDAR INTEGRATION) ---
                                 is_avoiding = False
