@@ -804,6 +804,11 @@ def main():
     task2_search_prev_yaw = 0.0
     task2_search_start_yaw = 0.0
 
+    # --- TASK 2 STALL DETECTION VARIABLES ---
+    task2_stall_start_time = None
+    task2_stall_check_time = None
+    task2_last_dist_to_wp = 0.0
+
     # --- YENİ LIDAR GÖSTERGE DEĞİŞKENLERİ ---
     lidar_min_dist_mm = 0.0
     lidar_avg_dist_mm = 0.0
@@ -1883,15 +1888,15 @@ def main():
                             # Normalize angle to 0..2pi
                             if robot_angle_rad < 0: robot_angle_rad += 2 * math.pi
 
-                            # Find closest phase (0=0, 1=pi/2, 2=pi, 3=3pi/2)
-                            closest_phase = int(round(robot_angle_rad / (math.pi / 2.0))) % 4
+                            # Find closest phase (8 sectors for smoother circling)
+                            closest_phase = int(round(robot_angle_rad / (math.pi / 4.0))) % 8
 
                             # Start targeting the NEXT phase
                             task2_search_phase = closest_phase + 1
-                            task2_circle_target_phase = task2_search_phase + 8
+                            task2_circle_target_phase = task2_search_phase + 16  # 2 laps * 8 points
 
                             print(
-                                f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Start Phase: {task2_search_phase}")
+                                f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Start Phase: {task2_search_phase} (Target: {task2_circle_target_phase})")
 
                             task2_search_laps = 0
                             task2_green_verify_count = 0
@@ -1927,15 +1932,16 @@ def main():
                 elif mevcut_gorev == "TASK2_GREEN_MARKER_FOUND":
                     # Circle the object (2m radius, 2 laps)
                     R = getattr(cfg, 'TASK2_SEARCH_DIAMETER', 2.0) / 2.0
-                    if 'task2_circle_target_phase' not in locals(): task2_circle_target_phase = task2_search_phase + 8
+                    if 'task2_circle_target_phase' not in locals():
+                        task2_circle_target_phase = task2_search_phase + 16  # 2 laps * 8 points
 
                     if task2_search_phase >= task2_circle_target_phase:
                         print(f"{Fore.GREEN}[TASK2] OBJECT CIRCLED -> RETURN HOME{Style.RESET_ALL}")
                         mevcut_gorev = "TASK2_RETURN_HOME"
                     else:
-                        # 4 points per lap (0, 90, 180, 270 degrees)
-                        phase_mod = task2_search_phase % 4
-                        angle_rad = phase_mod * (math.pi / 2.0)
+                        # 8 points per lap (0, 45, 90, ..., 315 degrees)
+                        phase_mod = task2_search_phase % 8
+                        angle_rad = phase_mod * (math.pi / 4.0)
 
                         # Calculate Target Point (Using LOCKED center)
                         override_target_x = task2_circle_center_x + (R * math.cos(angle_rad))
@@ -1943,6 +1949,31 @@ def main():
 
                         # Distance Check
                         dist_to_wp = math.sqrt((override_target_x - robot_x) ** 2 + (override_target_y - robot_y) ** 2)
+
+                        # --- STALL DETECTION ---
+                        if task2_stall_check_time is None:
+                            task2_stall_check_time = time.time()
+                            task2_last_dist_to_wp = dist_to_wp
+                            task2_stall_start_time = None
+
+                        # Check progress every 1.0 second
+                        if (time.time() - task2_stall_check_time) > 1.0:
+                            # If moved less than 10cm in duration
+                            if abs(dist_to_wp - task2_last_dist_to_wp) < 0.1:
+                                if task2_stall_start_time is None:
+                                    task2_stall_start_time = task2_stall_check_time
+                            else:
+                                # Reset timer if moving
+                                task2_stall_start_time = None
+
+                            task2_stall_check_time = time.time()
+                            task2_last_dist_to_wp = dist_to_wp
+
+                        # If stuck for > 5 seconds
+                        if task2_stall_start_time is not None and (time.time() - task2_stall_start_time) > 5.0:
+                            print(
+                                f"{Back.RED}[TASK2] STALL DETECTED (Stuck at {dist_to_wp:.2f}m) -> ABORTING CIRCLING{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK2_RETURN_HOME"
 
                         # Debug Print (Required for diagnosis)
                         print(
@@ -1952,6 +1983,9 @@ def main():
                             print(
                                 f"[TASK2] Object Circle Phase {task2_search_phase} Reached (Dist: {dist_to_wp:.2f}m).")
                             task2_search_phase += 1
+                            # Reset stall timer on phase change
+                            task2_stall_start_time = None
+                            task2_stall_check_time = None
 
                             # --- TASK 1 REVERSE (RETURN HOME) ---
                 elif mevcut_gorev == "TASK2_RETURN_HOME":
