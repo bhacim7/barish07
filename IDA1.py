@@ -707,118 +707,6 @@ def pre_flight_check(zed_cam, controller_obj):
     return all_ok
 
 
-def task6_audio_listener_thread():
-    """
-    Arka planda sürekli çalışarak mikrofonu dinler.
-    Ayarları config.py dosyasından (cfg.T6_...) çeker.
-    1 Düdük -> task6_interrupt_request = 3 yapar.
-    2 Düdük -> task6_interrupt_request = 5 yapar.
-    """
-    global task6_interrupt_request, task6_detected_freq, task6_timestamp, is_running_g
-
-    print("[TASK 6] Ses Dinleme Modülü Başlatılıyor...")
-
-    p = pyaudio.PyAudio()
-    stream = None
-
-    try:
-        # Mikrofonu Aç (Ayarlar Config'den)
-        stream = p.open(format=pyaudio.paInt16,  # Bu sabit kalabilir
-                        channels=cfg.T6_AUDIO_CHANNELS,
-                        rate=cfg.T6_AUDIO_RATE,
-                        input=True,
-                        frames_per_buffer=cfg.T6_AUDIO_CHUNK)
-    except Exception as e:
-        print(f"[HATA] Mikrofon açılamadı! Task 6 devre dışı. Hata: {e}")
-        return
-
-    # Durum Makinesi Değişkenleri
-    state = "LISTENING"
-    first_blast_end_time = 0
-    cooldown_start_time = 0
-    BLAST_TIMEOUT = 2.0  # Düdük arası maks bekleme (Sabit kural)
-    COOLDOWN_PERIOD = 3.0  # Hata önleme beklemesi
-
-    temp_detected_freq = None
-
-    while is_running_g:  # Ana program çalıştığı sürece dön
-        try:
-            # Ses verisini oku (Config'den gelen Chunk boyutuyla)
-            raw_data = stream.read(cfg.T6_AUDIO_CHUNK, exception_on_overflow=False)
-            data_np = np.frombuffer(raw_data, dtype=np.int16)
-
-            # FFT Analizi (Frekans Bulma)
-            fft_data = np.fft.fft(data_np * np.hanning(len(data_np)))
-            magnitudes = np.abs(fft_data)[:len(fft_data) // 2]
-            # Frekans eksenini oluştururken Config'deki Rate'i kullan
-            frequencies = np.fft.fftfreq(len(data_np), 1.0 / cfg.T6_AUDIO_RATE)[:len(data_np) // 2]
-
-            sound_present = None  # Frekans bulundu mu?
-
-            # Hedef frekansları tara (Config'deki Listeden)
-            for freq_name, (min_f, max_f, threshold) in cfg.T6_TARGET_FREQS.items():
-                # İlgili frekans aralığındaki indeksleri bul
-                indices = np.where((frequencies >= min_f) & (frequencies <= max_f))
-                if len(indices[0]) > 0:
-                    max_mag = np.max(magnitudes[indices[0]])
-                    # Eşik değerini kontrol et
-                    if max_mag > threshold:
-                        sound_present = freq_name
-                        # print(f"[DEBUG] Ses Algılandı: {freq_name} Güç: {max_mag:.0f}")
-                        break
-
-            current_time = time.time()
-
-            # --- DURUM MAKİNESİ (STATE MACHINE) ---
-            # (Burası değişmedi, mantık aynı)
-
-            if state == "LISTENING":
-                if sound_present is not None:
-                    state = "SOUND_DETECTED"
-                    temp_detected_freq = sound_present
-                    print(f"[TASK 6] 1. Sinyal Algılandı ({temp_detected_freq})...")
-
-            elif state == "SOUND_DETECTED":
-                if sound_present is None:
-                    state = "WAITING_FOR_NEXT"
-                    first_blast_end_time = current_time
-                    print("[TASK 6] Sessizlik... 2. sinyal bekleniyor.")
-
-            elif state == "WAITING_FOR_NEXT":
-                if sound_present is not None:
-                    # 2. SES GELDİ -> TASK 5
-                    state = "COOLDOWN"
-                    cooldown_start_time = current_time
-
-                    print(f"\n>>> [ALARM] ÇİFT SİNYAL! ({temp_detected_freq}) -> TASK 5 <<<\n")
-                    task6_interrupt_request = 5
-                    task6_detected_freq = temp_detected_freq
-                    task6_timestamp = current_time
-
-                elif (current_time - first_blast_end_time) > BLAST_TIMEOUT:
-                    # ZAMAN DOLDU -> TASK 3
-                    state = "COOLDOWN"
-                    cooldown_start_time = current_time
-
-                    print(f"\n>>> [ALARM] TEK SİNYAL! ({temp_detected_freq}) -> TASK 3 <<<\n")
-                    task6_interrupt_request = 3
-                    task6_detected_freq = temp_detected_freq
-                    task6_timestamp = current_time
-
-            elif state == "COOLDOWN":
-                if (current_time - cooldown_start_time) > COOLDOWN_PERIOD:
-                    state = "LISTENING"
-                    temp_detected_freq = None
-
-        except Exception as e:
-            pass
-
-    # Temizlik
-    if stream:
-        stream.stop_stream()
-        stream.close()
-    p.terminate()
-
 
 def main():
     global width, manual_mode, magnetic_heading, mission_started, latest_lidar_scan_g, is_running_g, lidar_g
@@ -871,21 +759,6 @@ def main():
 
     print("Camera initialized!")
 
-    relay = None
-    try:
-
-        # YENİ (Tek Pin):
-        relay = motorPower.SingleMotorRelay(cfg.MOTOR_RELAY_PIN)
-        relay.power_on()  # Gücü ver
-
-        esc_delay = getattr(cfg, 'ESC_INIT_DELAY', 3.0)
-        print(f"ESC stabilizasyonu için {esc_delay} saniye bekleniyor...")
-        time.sleep(esc_delay)
-        print("Motorlar hazır!")
-
-    except Exception as e:
-        print(f"[UYARI] Röle başlatılamadı: {e}")
-        relay = None
 
     # --- YENİ LIDAR BAŞLATMA ---
     if not setup_lidar():
@@ -897,15 +770,6 @@ def main():
         lidar_thread.start()
     # --- BİTTİ ---
 
-    # --- BURAYA EKLE: TASK 6 SES DİNLEME THREAD BAŞLAT ---
-    # Robot başlar başlamaz arka planda mikrofonu dinlemeye başlar.
-    try:
-        audio_thread = threading.Thread(target=task6_audio_listener_thread)
-        audio_thread.daemon = True  # Ana program kapanınca bu da kapansın
-        audio_thread.start()
-        print("[INIT] Task 6 Ses Dinleyici Arka Planda Çalışıyor.")
-    except Exception as e:
-        print(f"[UYARI] Ses thread başlatılamadı: {e}")
 
     camera_info = zed.get_camera_information()
     width = camera_info.camera_configuration.resolution.width
@@ -1094,6 +958,7 @@ def main():
                         lat = cmd.get("lat")
                         lon = cmd.get("lon")
 
+
                         if idx == 1:
                             cfg.T1_GATE_ENTER_LAT = lat;
                             cfg.T1_GATE_ENTER_LON = lon
@@ -1149,6 +1014,15 @@ def main():
                         else:
                             pass
 
+
+                    elif command_str == "set_task":
+                        new_task = cmd.get("task_name")
+                        if new_task:
+                            print(f"{Fore.MAGENTA}[CMD] GÖREV DEĞİŞTİRİLDİ: {mevcut_gorev} -> {new_task}{Style.RESET_ALL}")
+                            mevcut_gorev = new_task
+                            # Eğer görev değişirse bazı sayaçları sıfırlamak isteyebilirsin
+                            # Örn: Task 5'e atladıysan timer'ı sıfırla
+                            task5_dock_timer = 0
 
                     # --- DURUM 4: DİĞER KOMUTLAR (Manuel/Oto, PWM vb.) ---
                     else:
@@ -1353,7 +1227,7 @@ def main():
                         color_label = "UNKNOWN"
                         if cid in [0, 5]:
                             color_label = "RED"
-                        elif cid in [1, 4, 12]:
+                        elif cid in [1, 4]:
                             color_label = "GREEN"
                         elif cid == 10:
                             color_label = "BLACK"
@@ -1906,7 +1780,7 @@ def main():
                     global task2_green_verify_count
                     task2_green_verify_count = 0
 
-                if 'task2_circle_center_x' not in globals():
+                if 'task2_circle_center_x'  not in globals():
                     global task2_circle_center_x
                     global task2_circle_center_y
                     task2_circle_center_x = 0
@@ -3044,10 +2918,6 @@ def main():
         controller.set_servo(cfg.SOL_MOTOR, 1500)
         controller.set_servo(cfg.SAG_MOTOR, 1500)
     finally:
-
-        if relay:
-            print("[INFO] Motor güçleri kesiliyor...")
-            relay.cleanup()
         cv2.destroyAllWindows()
 
         # --- YENİ LIDAR KAPATMA ---
