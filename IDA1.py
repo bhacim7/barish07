@@ -827,7 +827,7 @@ def main():
             os.makedirs("idaKayit")
 
         # VideoWriter thread
-        writer = utils.AsyncVideoWriter(video_path, fps=20.0, max_queue=120)
+        writer = utils.AsyncVideoWriter(video_path, fps=10.0, max_queue=130)
         writer.start()
         print(f"[INFO] Video kaydı başladı: {video_path}")
     else:
@@ -841,7 +841,7 @@ def main():
 
     mevcut_gorev = cfg.MEVCUT_GOREV
 
-    manual_mode = True
+    manual_mode = False
     mission_started = True
 
     # Task 3 Globals (Refactored)
@@ -1431,7 +1431,7 @@ def main():
                 if width < 1000:
                     output_frame = frame
                 else:
-                    output_frame = cv2.resize(frame, (960, 540))
+                    output_frame = cv2.resize(frame, (640, 320))
 
             # Değişkenleri varsayılan olarak ayarla
             mod_durumu = "BEKLEME"
