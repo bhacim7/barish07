@@ -941,7 +941,7 @@ def main():
                             "pwm_R": utils.nint(controller.get_servo_pwm(cfg.SAG_MOTOR)),
                             "spd": utils.nfloat(hs),
                             "hdg": (
-                                f"{magnetic_heading:.0f}" if 'magnetic_heading' in locals() and magnetic_heading is not None else None),
+                                f"{magnetic_heading:.0f}" if 'magnetic_heading'  is not None else None),
                             "trg_hdg": utils.nint(adviced_course) if 'adviced_course' in locals() else 0,
                             "hlth": magnetic_heading_state if 'magnetic_heading_state' in locals() else "UNKNOWN",
                             "task": mevcut_gorev,
