@@ -27,6 +27,7 @@ from telem import TelemetrySender, CommandReceiver
 from headingFilter import KalmanFilter  # todo: heading filtresi testi yap
 from MainSystem2 import USVController
 import planner
+import perception
 
 import torch
 
@@ -808,6 +809,12 @@ def main():
     task2_stall_start_time = None
     task2_stall_check_time = None
     task2_last_dist_to_wp = 0.0
+
+    # --- TASK 5 SCANNING VARIABLES ---
+    task5_scan_accumulated_yaw = 0.0
+    task5_scan_prev_yaw = 0.0
+    task5_scan_start_yaw = 0.0
+    task5_target_bearing = 0.0
 
     # --- YENİ LIDAR GÖSTERGE DEĞİŞKENLERİ ---
     lidar_min_dist_mm = 0.0
@@ -2163,10 +2170,71 @@ def main():
                             returning_home = True
                             mevcut_gorev = "TASK1_STATE_EXIT"
                         else:
-                            print(f"{Fore.YELLOW}[GÖREV] Enabled -> KORİDORA GİRİLİYOR{Style.RESET_ALL}")
-                            mevcut_gorev = "TASK5_ENTER"
-                            # İçeri girerken GPS'i unutacağız, tamamen Lidar/Kör sürüş
-                            target_lat = None
+                            print(f"{Fore.YELLOW}[GÖREV] Enabled -> SCANNING FOR DOCK{Style.RESET_ALL}")
+                            mevcut_gorev = "TASK5_SCAN_FOR_DOCK"
+
+                            # Reset scan variables
+                            task5_scan_accumulated_yaw = 0.0
+                            task5_scan_prev_yaw = magnetic_heading
+                            task5_scan_start_yaw = magnetic_heading
+
+                # AŞAMA 1.5: 360 DERECE TARAMA (DOCK DETECTION)
+                elif mevcut_gorev == "TASK5_SCAN_FOR_DOCK":
+                    # Spot Turn Logic (Right/Clockwise)
+                    spot_pwm = getattr(cfg, 'SPOT_TURN_PWM', 200)
+                    controller.set_servo(cfg.SOL_MOTOR, 1500 + spot_pwm)
+                    controller.set_servo(cfg.SAG_MOTOR, 1500 - spot_pwm)
+
+                    # Update Yaw Accumulator
+                    current_yaw = magnetic_heading
+                    if task5_scan_prev_yaw is not None and current_yaw is not None:
+                        diff = nav.signed_angle_difference(task5_scan_prev_yaw, current_yaw)
+                        task5_scan_accumulated_yaw += abs(diff)
+                        task5_scan_prev_yaw = current_yaw
+
+                    # Detect Dock
+                    found, center_local, bearing_deg = perception.detect_dock_u_shape(local_lidar_scan)
+                    if found:
+                        print(f"{Fore.GREEN}[TASK5] DOCK FOUND! Bearing: {bearing_deg:.1f} deg{Style.RESET_ALL}")
+
+                        # Calculate absolute target bearing
+                        # bearing_deg is relative to robot heading (Math: CCW+, Compass: CW+)
+                        # Math +90 (Left) -> Compass -90 (West)
+                        task5_target_bearing = (magnetic_heading - bearing_deg) % 360
+
+                        # Stop scanning
+                        controller.set_servo(cfg.SOL_MOTOR, 1500)
+                        controller.set_servo(cfg.SAG_MOTOR, 1500)
+
+                        mevcut_gorev = "TASK5_ALIGN_TO_DOCK"
+
+                    # Timeout check (Full rotation)
+                    elif task5_scan_accumulated_yaw > 360.0:
+                        print(f"{Fore.RED}[TASK5] SCAN COMPLETE - DOCK NOT FOUND -> FALLBACK TO BLIND ENTRY{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK5_ENTER"
+                        # Stop motors
+                        controller.set_servo(cfg.SOL_MOTOR, 1500)
+                        controller.set_servo(cfg.SAG_MOTOR, 1500)
+
+                # AŞAMA 1.6: HİZALAMA (ALIGN TO DOCK)
+                elif mevcut_gorev == "TASK5_ALIGN_TO_DOCK":
+                    # Calculate heading error
+                    err = nav.signed_angle_difference(magnetic_heading, task5_target_bearing)
+
+                    if abs(err) < 5.0:
+                        print(f"{Fore.GREEN}[TASK5] ALIGNED -> ENTERING CORRIDOR{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK5_ENTER"
+                        controller.set_servo(cfg.SOL_MOTOR, 1500)
+                        controller.set_servo(cfg.SAG_MOTOR, 1500)
+                    else:
+                        # Spot Turn towards target
+                        spot_pwm = getattr(cfg, 'SPOT_TURN_PWM', 200)
+                        if err > 0: # Target Right
+                             controller.set_servo(cfg.SOL_MOTOR, 1500 + spot_pwm)
+                             controller.set_servo(cfg.SAG_MOTOR, 1500 - spot_pwm)
+                        else: # Target Left
+                             controller.set_servo(cfg.SOL_MOTOR, 1500 - spot_pwm)
+                             controller.set_servo(cfg.SAG_MOTOR, 1500 + spot_pwm)
 
                         # AŞAMA 2: KORİDORDA İLERLE VE BOŞLUK ARA (SAĞ VEYA SOL)
                 elif mevcut_gorev == "TASK5_ENTER":

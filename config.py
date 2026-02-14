@@ -147,6 +147,11 @@ else:
     T5_DOCK_APPROACH_LAT = 40.8092732
     T5_DOCK_APPROACH_LON = 29.2626729
 
+    # Dock Geometry (U-Shape Detection)
+    DOCK_WIDTH_M = 3.0  # Width between the side pontoons
+    DOCK_DEPTH_M = 2.0  # Depth of the slip (recess)
+    DOCK_TOLERANCE_M = 0.5  # Tolerance for width/depth matching
+
     # TASK 6: HARBOR ALERT (SESLİ KOMUT)
     T6_AUDIO_CHUNK = 2048
     T6_AUDIO_RATE = 44100
