@@ -10,7 +10,7 @@ NAV_MODE = "GPS"
 # =============================================================================
 # ORTAK DONANIM AYARLARI (Her iki modda geçerli)
 # =============================================================================
-SERIAL_PORT = os.getenv("TELEM_PORT", "/dev/ttyUSB1")
+SERIAL_PORT = os.getenv("TELEM_PORT", "/dev/ttyUSB0")
 SERIAL_BAUD = int(os.getenv("TELEM_BAUD", "57600"))
 
 SOL_MOTOR=1
@@ -68,7 +68,7 @@ else:
 
     # Sistem Ayarları
     STREAM = True  # Yer istasyonuna görüntü basılsın mı?
-    RECORD_VIDEO = True  # SD karta kayıt yapılsın mı?
+    RECORD_VIDEO = False  # SD karta kayıt yapılsın mı?
     SHOW_LOCAL_WINDOW = False  # True: Monitörde pencere aç, False: Arka planda çalış
     YOLO_CONFIDENCE = 0.40  # Hava durumuna göre düşürüp artırabilirsin
     CAM_HFOV = 110.0  # ZED 2i Yatay Görüş Açısı (Derece)
