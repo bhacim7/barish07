@@ -657,6 +657,93 @@ def select_mission_target(robot_x, robot_y, robot_yaw, nav_map=None, gps_target_
     return final_x, final_y, target_type
 
 
+def find_best_docking_gap(lidar_data):
+    """
+    Geometric-based Gap Detection Algorithm for Task 5.
+    Identifies valid entrances in the LiDAR scan.
+    """
+    if not lidar_data:
+        return None
+
+    # Constants from Config
+    MIN_GAP = getattr(cfg, 'DOCK_GAP_MIN_M', 1.0)
+    MAX_GAP = getattr(cfg, 'DOCK_GAP_MAX_M', 5.0)
+
+    # 1. Pre-process Data (Polar -> Cartesian)
+    points = []
+    for quality, angle, dist_mm in lidar_data:
+        dist_m = dist_mm / 1000.0
+        # Filter noise
+        if 0.1 < dist_m < 10.0:
+            # Angle is in degrees, convert to radians
+            # Lidar angle convention: 0 is front? Check Lidar driver.
+            # Usually RPLidar 0 is front.
+            rad = math.radians(angle)
+            x = dist_m * math.cos(rad)
+            y = dist_m * math.sin(rad)
+            points.append({'angle': angle, 'dist': dist_m, 'x': x, 'y': y})
+
+    # Sort by angle to ensure sequential processing
+    points.sort(key=lambda p: p['angle'])
+
+    if len(points) < 2:
+        return None
+
+    gaps = []
+
+    # 2. Iterate to find discontinuities
+    for i in range(len(points) - 1):
+        p1 = points[i]
+        p2 = points[i+1]
+
+        # Calculate Euclidean distance between adjacent points
+        gap_dist = math.sqrt((p1['x'] - p2['x'])**2 + (p1['y'] - p2['y'])**2)
+
+        if MIN_GAP < gap_dist < MAX_GAP:
+            # Valid Gap Found
+            mid_angle = (p1['angle'] + p2['angle']) / 2.0
+            mid_dist = (p1['dist'] + p2['dist']) / 2.0
+
+            # Normalize mid_angle
+            mid_angle = nav.normalize_angle(mid_angle)
+
+            gaps.append({
+                'center_angle': mid_angle,
+                'width': gap_dist,
+                'distance': mid_dist
+            })
+
+    # Check wrap-around gap (360 -> 0)
+    p_last = points[-1]
+    p_first = points[0]
+    gap_dist_wrap = math.sqrt((p_last['x'] - p_first['x'])**2 + (p_last['y'] - p_first['y'])**2)
+
+    if MIN_GAP < gap_dist_wrap < MAX_GAP:
+        # Wrap-around gap angle logic is tricky, usually around 0/360
+        # Average of 359 and 1 is (359+1)/2 = 180 (Wrong)
+        # Vector average is better, or just use 0 if close to front
+        mid_angle = 0.0 # Approximation for front gap
+        mid_dist = (p_last['dist'] + p_first['dist']) / 2.0
+        gaps.append({'center_angle': 0.0, 'width': gap_dist_wrap, 'distance': mid_dist})
+
+
+    # 3. Select Best Gap (Closest to Heading 0 - Front)
+    best_gap = None
+    min_deviation = float('inf')
+
+    for gap in gaps:
+        # Deviation from front (0 degrees)
+        dev = abs(nav.normalize_angle(gap['center_angle']))
+
+        # Prioritize gaps roughly in front (+/- 90 degrees)
+        if dev < 90.0:
+            if dev < min_deviation:
+                min_deviation = dev
+                best_gap = gap
+
+    return best_gap
+
+
 def pre_flight_check(zed_cam, controller_obj):
     """Saha testinden önce sistem sağlığını kontrol eder."""
     print("\n" + "=" * 60)
@@ -808,6 +895,11 @@ def main():
     task2_stall_start_time = None
     task2_stall_check_time = None
     task2_last_dist_to_wp = 0.0
+
+    # --- TASK 5 DOCKING VARIABLES ---
+    dock_target_heading = 0.0
+    task5_scan_attempts = 0
+    task5_dock_timer = 0
 
     # --- YENİ LIDAR GÖSTERGE DEĞİŞKENLERİ ---
     lidar_min_dist_mm = 0.0
@@ -2142,100 +2234,134 @@ def main():
                                     f"{Fore.RED}[TASK3] FAILED (Max Attempts) -> FORCING NEXT TASK (TASK 5){Style.RESET_ALL}")
                                 mevcut_gorev = "TASK5_APPROACH"
 
-                # TASK 5: DOCKING (SAĞ/SOL BOŞLUK TARAMALI)
+                # TASK 5: DOCKING (GEOMETRIC GAP DETECTION)
                 # ---------------------------------------------------------------------
 
-                # Global Değişkenler
-                if 'task5_dock_side' not in globals():
-                    global task5_dock_side
-                    task5_dock_side = "RIGHT"  # Varsayılan (Bulunca değişecek)
-
-                # AŞAMA 1: MARİNA GİRİŞİNE GİT
                 elif mevcut_gorev == "TASK5_APPROACH":
                     target_lat = cfg.T5_DOCK_APPROACH_LAT
                     target_lon = cfg.T5_DOCK_APPROACH_LON
 
                     if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 4.0:
-                        print(f"{Fore.YELLOW}[GÖREV] Marina Girişine Varıldı{Style.RESET_ALL}")
-
+                        print(f"{Fore.YELLOW}[TASK5] Approach Reached -> Scanning for Gap{Style.RESET_ALL}")
                         if not getattr(cfg, 'ENABLE_TASK5', True):
-                            print(f"{Fore.YELLOW}[TASK5] Disabled -> Returning Home (Task 1 Reverse){Style.RESET_ALL}")
+                            print(f"{Fore.YELLOW}[TASK5] Disabled -> Returning Home{Style.RESET_ALL}")
                             returning_home = True
                             mevcut_gorev = "TASK1_STATE_EXIT"
                         else:
-                            print(f"{Fore.YELLOW}[GÖREV] Enabled -> KORİDORA GİRİLİYOR{Style.RESET_ALL}")
-                            mevcut_gorev = "TASK5_ENTER"
-                            # İçeri girerken GPS'i unutacağız, tamamen Lidar/Kör sürüş
-                            target_lat = None
+                            mevcut_gorev = "TASK5_SCAN"
+                            task5_scan_attempts = 0
 
-                        # AŞAMA 2: KORİDORDA İLERLE VE BOŞLUK ARA (SAĞ VEYA SOL)
+                elif mevcut_gorev == "TASK5_SCAN":
+                    # Stop & Scan Logic
+                    # We can use the existing lidar data (local_lidar_scan)
+                    # To be robust, we might want to ensure we have fresh data
+
+                    gap = find_best_docking_gap(local_lidar_scan)
+
+                    if gap:
+                        print(f"{Fore.GREEN}[TASK5] GAP FOUND! Angle: {gap['center_angle']:.1f} deg, Dist: {gap['distance']:.2f}m{Style.RESET_ALL}")
+                        # Calculate absolute target heading
+                        dock_target_heading = (magnetic_heading + gap['center_angle']) % 360.0
+                        mevcut_gorev = "TASK5_ALIGN"
+                    else:
+                        print(f"{Fore.RED}[TASK5] No Gap Found... Retrying ({task5_scan_attempts}){Style.RESET_ALL}")
+                        task5_scan_attempts += 1
+                        # Rotate slightly to change perspective?
+                        # Or just wait? Let's wait.
+                        if task5_scan_attempts > 20: # ~2 seconds @ 10Hz loop
+                             print(f"{Fore.RED}[TASK5] SCAN TIMEOUT -> ABORTING TO EXIT{Style.RESET_ALL}")
+                             mevcut_gorev = "TASK5_EXIT"
+
+                elif mevcut_gorev == "TASK5_ALIGN":
+                     # Turn to face the gap
+                     target_lat = None # GPS Yok
+
+                     err = nav.signed_angle_difference(magnetic_heading, dock_target_heading)
+                     if abs(err) < 5.0:
+                         print(f"{Fore.GREEN}[TASK5] ALIGNED -> ENTERING DOCK{Style.RESET_ALL}")
+                         mevcut_gorev = "TASK5_ENTER"
+                     else:
+                         # Spot Turn to Align
+                         # Handled in the "FORCE ALIGNMENT" block below via dock_target_heading override
+                         pass
+
                 elif mevcut_gorev == "TASK5_ENTER":
-                    target_lat = None  # GPS Yok
-
-                    # --- BOŞLUK TESPİTİ (GAP DETECTION) ---
-                    # Lidar verisinden SAĞ (30-110) ve SOL (-110 ile -30) sektörlere bak.
-                    # Duvarlar genelde 1-1.5m mesafededir.
-                    # Eğer mesafe > 2.0m olursa, orada boşluk var demektir.
-
-                    gap_threshold = 1.5  # İstenilen Limit
-
-                    avg_right = 0
-                    avg_left = 0
-
-                    if local_lidar_scan:
-                        # Sağ Sektör (Genelde 90 derece civarı)
-                        right_dists = [p[2] for p in local_lidar_scan if 70 < p[1] < 110 and p[2] > 0]
-                        # Sol Sektör (Genelde -90 derece civarı -> 250-290 derece gibi gelebilir veya eksi)
-                        # process_lidar_sectors fonksiyonunda açılar -180..180 formatına dönüyordu, onu kullanalım:
-                        # Veya basitçe ham veriden:
-                        left_dists = []
-                        for p in local_lidar_scan:
-                            angle = p[1]
-                            dist = p[2]
-                            # Açıyı normalize et (-180, 180)
-                            if angle > 180: angle -= 360
-
-                            if -110 < angle < -70 and dist > 0:
-                                left_dists.append(dist)
-
-                        # Ortalamaları Al
-                        if right_dists: avg_right = sum(right_dists) / len(right_dists)
-                        if left_dists: avg_left = sum(left_dists) / len(left_dists)
-
-                        # --- KARAR MEKANİZMASI ---
-                        if avg_right > gap_threshold:
-                            print(
-                                f"{Fore.CYAN}[GÖREV] SAĞDA BOŞLUK ({avg_right:.1f}m) -> PARK (SAĞ){Style.RESET_ALL}")
-                            task5_dock_side = "RIGHT"
-                            mevcut_gorev = "TASK5_DOCK"
-                            task5_dock_timer = 0
-
-                        elif avg_left > gap_threshold:
-                            print(
-                                f"{Fore.CYAN}[GÖREV] SOLDA BOŞLUK ({avg_left:.1f}m) -> PARK (SOL){Style.RESET_ALL}")
-                            task5_dock_side = "LEFT"
-                            mevcut_gorev = "TASK5_DOCK"
-                            task5_dock_timer = 0
-
-                # AŞAMA 3: İÇERİ GİR (KÖR DALIŞ)
-                elif mevcut_gorev == "TASK5_DOCK":
                     target_lat = None
-                    # Manevra Sürüş Bloğunda yapılacak (Timer ile)
 
-                # AŞAMA 4: ÇIKIŞ
+                    # Reactive Gap Centering (PID)
+                    # We need to maintain the gap center or equal distance to sides
+
+                    # Simple Approach: Use the existing Sector Logic but refined
+                    # Left (-90 to -30) vs Right (30 to 90)
+
+                    r_dists = [p[2] for p in local_lidar_scan if 30 < p[1] < 90]
+                    l_dists = [p[2] for p in local_lidar_scan if p[1] > 270 and p[1] < 330] # 270=-90, 330=-30
+
+                    # Or use nav.normalize_angle logic if available in list
+                    # p[1] is 0..360 usually in raw scan?
+                    # RPLidar usually returns 0..360.
+                    # 270..330 is Left.
+
+                    min_r = min(r_dists) if r_dists else 2.0
+                    min_l = min(l_dists) if l_dists else 2.0
+
+                    # Error = Right - Left (If Right is large, we are too Left -> Turn Right?)
+                    # No, if Right > Left, we are closer to Left. We should turn Right.
+                    # Error = Left - Right?
+                    # Let's say: Target is center.
+                    # deviation = (Right - Left)
+                    # If Right=2, Left=1 -> deviation = 1. We are close to Left. We need positive Turn (Right).
+
+                    deviation = min_r - min_l
+                    kp = 40.0
+                    turn_val = np.clip(deviation * kp, -100, 100)
+
+                    # Move Forward
+                    base_spd = 1580
+                    controller.set_servo(cfg.SOL_MOTOR, int(base_spd + turn_val))
+                    controller.set_servo(cfg.SAG_MOTOR, int(base_spd - turn_val))
+
+                    # Stop Condition: Front Wall
+                    # -15 to +15 deg
+                    front_dists = [p[2] for p in local_lidar_scan if p[1] < 15 or p[1] > 345]
+                    min_front = min(front_dists) if front_dists else 10.0
+
+                    if min_front < 1.0: # Close to back wall
+                         print(f"{Fore.GREEN}[TASK5] PARK POSITION REACHED -> STOPPING{Style.RESET_ALL}")
+                         controller.set_servo(cfg.SOL_MOTOR, 1500)
+                         controller.set_servo(cfg.SAG_MOTOR, 1500)
+                         mevcut_gorev = "TASK5_PARK"
+                         task5_dock_timer = time.time() # Start Timer
+
+                elif mevcut_gorev == "TASK5_PARK":
+                    # Hold Position
+                    controller.set_servo(cfg.SOL_MOTOR, 1500)
+                    controller.set_servo(cfg.SAG_MOTOR, 1500)
+
+                    duration = getattr(cfg, 'DOCK_PARK_DURATION', 5.0)
+                    if (time.time() - task5_dock_timer) > duration:
+                        print(f"{Fore.GREEN}[TASK5] PARKING COMPLETE -> EXITING{Style.RESET_ALL}")
+                        mevcut_gorev = "TASK5_EXIT"
+                        task5_dock_timer = time.time()
+
                 elif mevcut_gorev == "TASK5_EXIT":
-                    # Hedef: Task 5 Başlangıç Noktası (Çıkış Kapısı)
-                    target_lat = cfg.T5_DOCK_APPROACH_LAT
-                    target_lon = cfg.T5_DOCK_APPROACH_LON
+                    # Reverse Out
+                    duration = getattr(cfg, 'DOCK_REVERSE_EXIT_TIME', 8.0)
 
-                    # Eğer manevra bittiyse ve hedefe yaklaştıysak DUR
-                    # (Timer 100'ü geçtiyse sürüş moduna geçilmiş demektir)
-                    if 'task5_dock_timer' in globals() and task5_dock_timer > 80:
-                        if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 4.0:
-                            print(f"{Fore.GREEN}[TASK5] Completed -> Returning Home (Task 1 Reverse){Style.RESET_ALL}")
-                            returning_home = True
-                            mevcut_gorev = "TASK1_STATE_EXIT"
-                            task5_dock_timer = 0
+                    if (time.time() - task5_dock_timer) < duration:
+                         # Reverse
+                         rev_spd = 1400
+                         controller.set_servo(cfg.SOL_MOTOR, rev_spd)
+                         controller.set_servo(cfg.SAG_MOTOR, rev_spd)
+                    else:
+                         # Return to Start
+                         target_lat = cfg.T5_DOCK_APPROACH_LAT
+                         target_lon = cfg.T5_DOCK_APPROACH_LON
+
+                         if nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon) < 4.0:
+                             print(f"{Fore.GREEN}[TASK5] MISSION COMPLETE -> RETURNING HOME{Style.RESET_ALL}")
+                             returning_home = True
+                             mevcut_gorev = "TASK1_STATE_EXIT"
 
                 # --- GENEL NAVİGASYON HESABI ---
                 # Hangi görevde olursak olalım, target_lat belirlendiyse hesap yap.
@@ -2484,7 +2610,8 @@ def main():
                             # TASK2_START burada kalsın ki start noktasındaki stabil davranışı korusun.
                             if not force_initial_alignment:  # Only check if not already forced
                                 if mevcut_gorev in ["TASK1_STATE_ENTER", "TASK1_STATE_MID", "TASK1_STATE_EXIT",
-                                                    "TASK2_START", "T3_START", "TASK6_SPEED", "TASK6_DOCK"]:
+                                                    "TASK2_START", "T3_START", "TASK6_SPEED", "TASK6_DOCK",
+                                                    "TASK5_ALIGN"]:
                                     should_force_alignment = True
 
                                 # C) HİBRİT MOD (Önce Dön, Sonra A* Kullan) - Sizin istediğiniz kısım burası
@@ -2631,7 +2758,9 @@ def main():
                                 use_local_yaw = False
                                 local_target_angle = 0.0
 
-                                if visual_bearing is not None:
+                                if mevcut_gorev == "TASK5_ALIGN":
+                                    final_bearing = dock_target_heading
+                                elif visual_bearing is not None:
                                     final_bearing = visual_bearing
                                 elif target_lat is not None:
                                     final_bearing = nav.calculate_bearing(ida_enlem, ida_boylam, target_lat, target_lon)

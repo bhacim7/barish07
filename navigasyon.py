@@ -17,6 +17,17 @@ def signed_angle_difference(C, A):  # C as current_heading(magnetic_heading) and
         return clockwise_diff - 360
 
 
+def normalize_angle(angle):
+    """
+    Açıyı -180 ile +180 derece arasına normalize eder.
+    """
+    while angle > 180:
+        angle -= 360
+    while angle <= -180:
+        angle += 360
+    return angle
+
+
 def haversine(lat1, lon1, lat2, lon2):  # todo: add to git if success
     if None in (lat1, lon1, lat2, lon2):
         # Burada istersen 0 döndür veya bir önceki bearing değerini koru
