@@ -98,7 +98,7 @@ else:
     # Hybrid Navigation Logic
     HYBRID_STEP_DIST = 2.0  # Meters
     HYBRID_HEADING_THRESHOLD = 30.0 # Degrees
-    TASK2_SEARCH_DIAMETER = 1.0
+    TASK2_SEARCH_DIAMETER = 4.0
     TASK3_SEARCH_DIAMETER = 2.0
 
     # --- YARIŞMA KOORDİNATLARI (RoboBoat 2026) ---
