@@ -221,14 +221,14 @@ INFLATION_MARGIN_M = 0.08  # Ekstra güvenlik payı (Duvara ne kadar yaklaşsın
 if cfg.STREAM == True:
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_socket.connect(("192.168.1.25", 5000))
+        client_socket.connect(("192.168.1.125", 5000))
     except:
         pass
 
 # Görüntü İşleme
 # torch.backends.cudnn.benchmark = True  # sabit input boyutları için hız
 # --- GÜNCELLEME: YENİ DATASET VE ORIN NANO OPTİMİZASYONU ---
-model_path = "/home/yarkin/roboboatIDA/roboboat/weights/small640.engine"
+model_path = "/home/yarkin/roboboatIDA/roboboat/weights/nano1024_v2.engine"
 
 if not os.path.exists(model_path):
     print(f"[UYARI] {model_path} bulunamadı, yolov8n kullanılıyor.")
@@ -836,7 +836,7 @@ def main():
 
     mevcut_gorev = cfg.MEVCUT_GOREV
 
-    manual_mode = False
+    manual_mode = True
     mission_started = True
 
     # Task 3 Globals (Refactored)
@@ -1208,7 +1208,7 @@ def main():
 
                 # YOLO Modelini Çalıştır
                 conf_val = getattr(cfg, 'YOLO_CONFIDENCE', 0.50)
-                results = model(frame, conf=conf_val, verbose=False)[0]
+                results = model(frame, conf=conf_val, imgsz=1024, verbose=False)[0]
                 detections = sv.Detections.from_ultralytics(results)
 
                 #  SENSOR FUSION
