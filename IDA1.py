@@ -221,7 +221,7 @@ INFLATION_MARGIN_M = 0.08  # Ekstra güvenlik payı (Duvara ne kadar yaklaşsın
 if cfg.STREAM == True:
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_socket.connect(("192.168.1.125", 5000))
+        client_socket.connect(("192.168.1.25", 5000))
     except:
         pass
 
@@ -256,7 +256,7 @@ print("Setting mode...")
 controller.set_mode("MANUAL")
 print("Mode set!")
 
-LIDAR_PORT_NAME = '/dev/ttyUSB0'  # NOT: Bu portu kontrol edin. OrangeCube /dev/ttyACM0'da
+LIDAR_PORT_NAME = '/dev/ttyUSB1'  # NOT: Bu portu kontrol edin. OrangeCube /dev/ttyACM0'da
 lidar_g = None  # Global lidar nesnesi
 is_running_g = True  # Thread'i durdurmak için global bayrak
 latest_lidar_scan_g = []  # En son taramayı tutan paylaşımlı değişken
@@ -1227,7 +1227,7 @@ def main():
                         color_label = "UNKNOWN"
                         if cid in [0, 5]:
                             color_label = "RED"
-                        elif cid in [1, 4]:
+                        elif cid in [1, 12]:
                             color_label = "GREEN"
                         elif cid == 10:
                             color_label = "BLACK"
@@ -1235,7 +1235,7 @@ def main():
                             color_label = "YELLOW"
                         elif cid == 3:
                             color_label ="RED_INDICATOR"
-                        elif cid == 12:
+                        elif cid == 4:
                             color_label = "GREEN_INDICATOR"
                         else:
                             continue
