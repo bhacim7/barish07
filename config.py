@@ -77,7 +77,7 @@ else:
     ENABLE_TASK3 = True
     ENABLE_TASK5 = True
 
-    MEVCUT_GOREV = "TASK2_START"
+    MEVCUT_GOREV = "TASK5_APPROACH"
 
     # Sürüş Katsayıları
     KpACI = 2.5  # Sadece A* çalışmazsa devreye giren 'Plan B' için kullanılır.
@@ -144,8 +144,8 @@ else:
     T3_LEFT_LON = 0.0
 
     # TASK 5: Docking (Park Etme)
-    T5_DOCK_APPROACH_LAT = 40.8632559
-    T5_DOCK_APPROACH_LON = 29.2594437
+    T5_DOCK_APPROACH_LAT = 40.8092732
+    T5_DOCK_APPROACH_LON = 29.2626729
 
     # TASK 6: HARBOR ALERT (SESLİ KOMUT)
     T6_AUDIO_CHUNK = 2048
