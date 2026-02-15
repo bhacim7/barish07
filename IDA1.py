@@ -804,6 +804,10 @@ def main():
     task2_search_prev_yaw = 0.0
     task2_search_start_yaw = 0.0
 
+    # --- TASK 2 GPS ORBIT VARIABLES ---
+    task2_circle_center_lat = None
+    task2_circle_center_lon = None
+
     # --- TASK 2 STALL DETECTION VARIABLES ---
     task2_stall_start_time = None
     task2_stall_check_time = None
@@ -1831,20 +1835,19 @@ def main():
 
                 elif mevcut_gorev == "TASK2_SEARCH_PATTERN":
                     # Search for Green Marker (Class ID 4) - Real-time Detection
-                    # 2 Laps (8 phases) around task2_search_center_x,y
+                    # Stationary Rotation until found
 
                     found_green_live = False
-                    found_green_x = 0
-                    found_green_y = 0
+                    found_green_dist = 0
+                    found_green_angle_offset = 0
 
                     if detections:
                         cids = detections.class_id.tolist()
                         coords = detections.xyxy.tolist()
 
                         for i, cid in enumerate(cids):
-                            # Strict verification: Only ID 4 (Green Marker) as per request
+                            # Strict verification: Only ID 4 (Green Marker)
                             if cid == 4:
-                                # Calculate position
                                 x1, y1, x2, y2 = map(int, coords[i])
                                 cx = int((x1 + x2) / 2)
                                 box_h = y2 - y1
@@ -1855,15 +1858,12 @@ def main():
 
                                 # Strict Distance Filter: < 5.0m to avoid noise
                                 if not np.isnan(dist_m) and not np.isinf(dist_m) and 0.1 < dist_m < 5.0:
-                                    # Calculate world coordinates
-                                    hfov_rad = math.radians(getattr(cfg, 'CAM_HFOV', 110.0))
+                                    # GPS CALCULATION PREP
+                                    hfov_deg = getattr(cfg, 'CAM_HFOV', 110.0)
                                     pixel_offset = (cx - (width / 2)) / width
-                                    angle_offset = -pixel_offset * hfov_rad
-                                    obj_global_angle = robot_yaw + angle_offset
-
-                                    found_green_x = robot_x + (dist_m * math.cos(obj_global_angle))
-                                    found_green_y = robot_y + (dist_m * math.sin(obj_global_angle))
-
+                                    # Positive for Right side
+                                    found_green_angle_offset = pixel_offset * hfov_deg
+                                    found_green_dist = dist_m
                                     found_green_live = True
                                     break
 
@@ -1872,31 +1872,31 @@ def main():
                         print(f"[TASK2] Verify Green: {task2_green_verify_count}/5")
 
                         if task2_green_verify_count >= 5:
-                            print(f"{Fore.GREEN}[TASK2] GREEN MARKER CONFIRMED! -> CIRCLING OBJECT{Style.RESET_ALL}")
+                            print(f"{Fore.GREEN}[TASK2] GREEN MARKER CONFIRMED! -> CALCULATING GPS ORBIT{Style.RESET_ALL}")
                             mevcut_gorev = "TASK2_GREEN_MARKER_FOUND"
 
-                            # LOCK COORDINATES ONCE
-                            task2_circle_center_x = found_green_x
-                            task2_circle_center_y = found_green_y
-                            print(f"[TASK2] Locked Center: ({task2_circle_center_x:.1f}, {task2_circle_center_y:.1f})")
+                            # 1. Calculate Center GPS
+                            obj_bearing = (magnetic_heading + found_green_angle_offset) % 360
 
-                            # Smart Start: Calculate the closest phase relative to the LOCKED center
-                            rel_x = robot_x - task2_circle_center_x
-                            rel_y = robot_y - task2_circle_center_y
-                            robot_angle_rad = math.atan2(rel_y, rel_x)
+                            task2_circle_center_lat, task2_circle_center_lon = calculate_obj_gps(
+                                ida_enlem, ida_boylam, found_green_dist, obj_bearing
+                            )
 
-                            # Normalize angle to 0..2pi
-                            if robot_angle_rad < 0: robot_angle_rad += 2 * math.pi
+                            print(f"[TASK2] Locked GPS Center: ({task2_circle_center_lat:.6f}, {task2_circle_center_lon:.6f})")
 
-                            # Find closest phase (8 sectors for smoother circling)
-                            closest_phase = int(round(robot_angle_rad / (math.pi / 4.0))) % 8
+                            # 2. Calculate Start Phase (Closest 45-deg sector)
+                            # Bearing FROM Center TO Robot
+                            bearing_to_robot = nav.calculate_bearing(task2_circle_center_lat, task2_circle_center_lon, ida_enlem, ida_boylam)
 
-                            # Start targeting the NEXT phase
+                            # Map to 0..7 (0=North, 1=NE, 2=East...)
+                            closest_phase = int(round(bearing_to_robot / 45.0)) % 8
+
+                            # Start targeting the NEXT phase (Clockwise)
                             task2_search_phase = closest_phase + 1
                             task2_circle_target_phase = task2_search_phase + 16  # 2 laps * 8 points
 
                             print(
-                                f"[TASK2] Robot Angle: {math.degrees(robot_angle_rad):.1f}deg -> Start Phase: {task2_search_phase} (Target: {task2_circle_target_phase})")
+                                f"[TASK2] Robot Bearing from Center: {bearing_to_robot:.1f}deg -> Start Phase: {task2_search_phase} (Target: {task2_circle_target_phase})")
 
                             task2_search_laps = 0
                             task2_green_verify_count = 0
@@ -1918,37 +1918,37 @@ def main():
                             task2_search_accumulated_yaw += abs(diff)
                             task2_search_prev_yaw = current_yaw
 
-                        # Debug Print (Optional)
-                        # print(f"[TASK2] Rotating... Accumulated: {task2_search_accumulated_yaw:.1f}/360.0")
-
                         # Complete if > 320 deg AND heading matches start heading (within 15 deg)
                         if task2_search_start_yaw is not None and current_yaw is not None:
                             heading_diff = abs(nav.signed_angle_difference(task2_search_start_yaw, current_yaw))
-                            # Ensure minimum rotation (e.g., 300 deg) to avoid early finish if noise
                             if task2_search_accumulated_yaw > 320.0 and heading_diff < 15.0:
                                 print(f"{Fore.RED}[TASK2] 360 ROTATION COMPLETE -> RETURN HOME{Style.RESET_ALL}")
                                 mevcut_gorev = "TASK2_RETURN_HOME"
 
                 elif mevcut_gorev == "TASK2_GREEN_MARKER_FOUND":
-                    # Circle the object (2m radius, 2 laps)
+                    # Circle the object (2m radius, 2 laps) using GPS Waypoints
                     R = getattr(cfg, 'TASK2_SEARCH_DIAMETER', 2.0) / 2.0
                     if 'task2_circle_target_phase' not in locals():
-                        task2_circle_target_phase = task2_search_phase + 16  # 2 laps * 8 points
+                        task2_circle_target_phase = task2_search_phase + 16  # Fallback
 
                     if task2_search_phase >= task2_circle_target_phase:
                         print(f"{Fore.GREEN}[TASK2] OBJECT CIRCLED -> RETURN HOME{Style.RESET_ALL}")
                         mevcut_gorev = "TASK2_RETURN_HOME"
                     else:
                         # 8 points per lap (0, 45, 90, ..., 315 degrees)
+                        # Phase 0 = North (0 deg). Clockwise increment.
                         phase_mod = task2_search_phase % 8
-                        angle_rad = phase_mod * (math.pi / 4.0)
+                        target_angle_deg = phase_mod * 45.0
 
-                        # Calculate Target Point (Using LOCKED center)
-                        override_target_x = task2_circle_center_x + (R * math.cos(angle_rad))
-                        override_target_y = task2_circle_center_y + (R * math.sin(angle_rad))
+                        # Calculate GPS Waypoint
+                        if task2_circle_center_lat is not None:
+                             # Using calculate_obj_gps as destination_point
+                             target_lat, target_lon = calculate_obj_gps(
+                                 task2_circle_center_lat, task2_circle_center_lon, R, target_angle_deg
+                             )
 
-                        # Distance Check
-                        dist_to_wp = math.sqrt((override_target_x - robot_x) ** 2 + (override_target_y - robot_y) ** 2)
+                        # Distance Check (Haversine)
+                        dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
 
                         # --- STALL DETECTION ---
                         if task2_stall_check_time is None:
@@ -1958,12 +1958,10 @@ def main():
 
                         # Check progress every 1.0 second
                         if (time.time() - task2_stall_check_time) > 1.0:
-                            # If moved less than 10cm in duration
                             if abs(dist_to_wp - task2_last_dist_to_wp) < 0.1:
                                 if task2_stall_start_time is None:
                                     task2_stall_start_time = task2_stall_check_time
                             else:
-                                # Reset timer if moving
                                 task2_stall_start_time = None
 
                             task2_stall_check_time = time.time()
@@ -1975,15 +1973,14 @@ def main():
                                 f"{Back.RED}[TASK2] STALL DETECTED (Stuck at {dist_to_wp:.2f}m) -> ABORTING CIRCLING{Style.RESET_ALL}")
                             mevcut_gorev = "TASK2_RETURN_HOME"
 
-                        # Debug Print (Required for diagnosis)
+                        # Debug Print
                         print(
-                            f"[TASK2] Circling Phase {task2_search_phase} | Center:({task2_circle_center_x:.1f}, {task2_circle_center_y:.1f}) | Target:({override_target_x:.1f}, {override_target_y:.1f}) | Dist: {dist_to_wp:.2f}m")
+                            f"[TASK2] GPS Phase {task2_search_phase} ({target_angle_deg:.0f}deg) | Center:({task2_circle_center_lat:.5f}, {task2_circle_center_lon:.5f}) | Dist: {dist_to_wp:.2f}m")
 
-                        if dist_to_wp < 1.5:  # Increased tolerance to 1.5m to avoid stalling
+                        if dist_to_wp < 1.5:
                             print(
-                                f"[TASK2] Object Circle Phase {task2_search_phase} Reached (Dist: {dist_to_wp:.2f}m).")
+                                f"[TASK2] GPS Phase {task2_search_phase} Reached (Dist: {dist_to_wp:.2f}m).")
                             task2_search_phase += 1
-                            # Reset stall timer on phase change
                             task2_stall_start_time = None
                             task2_stall_check_time = None
 
@@ -2277,14 +2274,8 @@ def main():
                         # 2. HEDEFİ BELİRLE
                         tx_world, ty_world = None, None
 
-                        # DURUM A: Manuel Override (Task 2 Circling)
-                        if (
-                                mevcut_gorev in ["TASK2_GREEN_MARKER_FOUND"]) and 'override_target_x' in locals():
-                            tx_world = override_target_x
-                            ty_world = override_target_y
-
-                        # DURUM B: Standart GPS / Vision
-                        else:
+                        # DURUM: Standart GPS / Vision (Task 2 Override Removed)
+                        if True:
                             gps_angle = aci_farki if 'aci_farki' in locals() else None
 
                             # --- HYBRID NAV LOGIC (STEP-SCAN-STEP) ---
