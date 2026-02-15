@@ -2292,7 +2292,7 @@ def main():
                                         need_new_target = False  # Hala gidiyoruz
 
                                 # 2. Yeni Hedef Belirleme (Vardıysak veya ilk kez)
-                                if need_new_target and 'aci_farki' in locals():
+                                if need_new_target and 'aci_farki' in locals() and aci_farki is not None:
                                     step_dist = getattr(cfg, 'HYBRID_STEP_DIST', 2.0)
                                     # GPS Hedefine doğru 2 metre ileri nokta koy
                                     h_tx, h_ty = get_hybrid_point(robot_x, robot_y, robot_yaw, aci_farki, step_dist)
