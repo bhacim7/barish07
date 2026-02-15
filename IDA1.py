@@ -2096,15 +2096,7 @@ def main():
                 elif mevcut_gorev == "T3_LEFT":
                     target_lat = cfg.T3_LEFT_LAT
                     target_lon = cfg.T3_LEFT_LON
-                    # Gate Detection Logic (Red + Green)
-                    if detections:
-                        cids = detections.class_id.tolist()
-                        has_red = any(c in [0, 3, 5] for c in cids)
-                        has_green = any(c in [1, 4, 12] for c in cids)
-                        if has_red and has_green:
-                            if not task3_gate_passed:
-                                task3_gate_passed = True
-                                print(f"{Fore.GREEN}[TASK3] GATE CONFIRMED (Red + Green Detected){Style.RESET_ALL}")
+                    
 
                     dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
                     if dist_to_wp < 2.0:
@@ -2123,6 +2115,15 @@ def main():
                 elif mevcut_gorev == "T3_RETURN_START":
                     target_lat = cfg.T3_START_LAT
                     target_lon = cfg.T3_START_LON
+                    # Gate Detection Logic (Red + Green)
+                    if detections:
+                        cids = detections.class_id.tolist()
+                        has_red = any(c in [0, 3, 5] for c in cids)
+                        has_green = any(c in [1, 4, 12] for c in cids)
+                        if has_red and has_green:
+                            if not task3_gate_passed:
+                                task3_gate_passed = True
+                                print(f"{Fore.GREEN}[TASK3] GATE CONFIRMED (Red + Green Detected){Style.RESET_ALL}")
 
                     dist_to_wp = nav.haversine(ida_enlem, ida_boylam, target_lat, target_lon)
                     if dist_to_wp < 2.0:
@@ -2591,7 +2592,7 @@ def main():
                                 best_red = None
                                 best_green = None
 
-                                if detections and mevcut_gorev.startswith("TASK1") or mevcut_gorev in ["T3_MID","T3_RETURN_MID"] :
+                                if detections and mevcut_gorev.startswith("TASK1") or mevcut_gorev in ["T3_MID","T3_RETURN_START"] :
                                     coords = detections.xyxy.tolist()
                                     cids = detections.class_id.tolist()
                                     reds = []
