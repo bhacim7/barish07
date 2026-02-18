@@ -77,7 +77,7 @@ else:
     ENABLE_TASK3 = True
     ENABLE_TASK5 = True
 
-    MEVCUT_GOREV = "TASK5_APPROACH"
+    MEVCUT_GOREV = "TASK2_START"
 
     # Sürüş Katsayıları
     KpACI = 2.5  # Sadece A* çalışmazsa devreye giren 'Plan B' için kullanılır.
@@ -86,9 +86,9 @@ else:
     T3_SPEED_PWM = 100
      # FAILSAFE SETTINGS
     MAP_DECAY_AMOUNT = 5
-    BLIND_DRIVE_SECONDS = 3.0
+    BLIND_DRIVE_SECONDS = 10.0
     BLIND_DRIVE_SAFE_DIST = 0.7
-    MAX_TILT_ANGLE = 5.0
+    MAX_TILT_ANGLE = 4.0
 
     # A* Tuning
     A_STAR_HEURISTIC_WEIGHT = 2.5
