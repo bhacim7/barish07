@@ -213,8 +213,8 @@ BUOY_MAX_DIST = 10.0  # 10 metreden uzaktaki nesneleri Lidar ile tarama
 GATE_COLOR_TOLERANCE = 5.0  # Kapı geçişinde renkler arası maks mesafe farkı
 
 # --- YENİ: NAVİGASYON VE ROBOT FİZİĞİ ---
-ROBOT_RADIUS_M = 0.45  # Robotun yarıçapı (metre) - Gövde genişliği/2 + biraz pay
-INFLATION_MARGIN_M = 0.08  # Ekstra güvenlik payı (Duvara ne kadar yaklaşsın?)
+ROBOT_RADIUS_M = 0.25  # Robotun yarıçapı (metre) - Gövde genişliği/2 + biraz pay
+INFLATION_MARGIN_M = 0.0008  # Ekstra güvenlik payı (Duvara ne kadar yaklaşsın?)
 # Toplam Şişirme = 0.60m -> Haritada 6 piksellik gri duvar örülecek.
 
 # Sadece Görüntü Aktarma icin (yarısmada komut satırına alınacak)
@@ -494,7 +494,7 @@ def process_lidar_sectors(scan_data, max_dist=3.0):
         dist_m = distance_mm / 1000.0
 
         # Gürültü filtresi (0.15m altı ve max_dist üstü yok say)
-        if dist_m < 0.03 or dist_m > max_dist:
+        if dist_m < 0.4 or dist_m > max_dist:
             continue
 
         # Açıları normalize et (-180 ile +180 arası)
@@ -1893,7 +1893,7 @@ def main():
 
                             # Start targeting the NEXT phase (Clockwise)
                             task2_search_phase = closest_phase + 1
-                            task2_circle_target_phase = task2_search_phase + 16  # 2 laps * 8 points
+                            task2_circle_target_phase = task2_search_phase + 8  # 1 laps * 8 points
 
                             print(
                                 f"[TASK2] Robot Bearing from Center: {bearing_to_robot:.1f}deg -> Start Phase: {task2_search_phase} (Target: {task2_circle_target_phase})")
@@ -2513,7 +2513,7 @@ def main():
                             # 2. Recovery Logic (Hysteresis - Minimum 4s)
                             elif failsafe_active:
                                 # Path is back (current_path is not None), but are we done?
-                                if (current_now_fs - failsafe_start_time) > 4.0:
+                                if (current_now_fs - failsafe_start_time) > 5.0:
                                     print(f"{Back.GREEN}[FAILSAFE] MANEUVER COMPLETE -> RESUMING A* NAVIGATION{Style.RESET_ALL}")
                                     failsafe_active = False
                                     path_lost_time = None
@@ -2673,7 +2673,7 @@ def main():
                                     # Forward P-Control
                                     kp = 1.0
                                     corr = heading_err * kp
-                                    fwd = cfg.BASE_PWM + 130
+                                    fwd = cfg.BASE_PWM + 180
 
                                     sol = int(np.clip(fwd + corr, 1100, 1900))
                                     sag = int(np.clip(fwd - corr, 1100, 1900))
