@@ -147,6 +147,13 @@ else:
     T5_DOCK_APPROACH_LAT = 40.8092732
     T5_DOCK_APPROACH_LON = 29.2626729
 
+    # Task 5: Geometric Docking Parameters
+    DOCK_GAP_MIN_M = 1.0   # Minimum Gap Width (Robot width ~0.9m + Margin)
+    DOCK_GAP_MAX_M = 5.0   # Maximum Gap Width (Avoid large open areas)
+    DOCK_PARK_DURATION = 5.0 # Seconds to wait inside dock
+    DOCK_REVERSE_EXIT_TIME = 8.0 # Seconds to reverse out
+    DOCK_SAFETY_MARGIN_M = 0.5 # Extra clearance
+
     # TASK 6: HARBOR ALERT (SESLİ KOMUT)
     T6_AUDIO_CHUNK = 2048
     T6_AUDIO_RATE = 44100
